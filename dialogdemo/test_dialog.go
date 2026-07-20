@@ -33,6 +33,9 @@ func main() {
 			AddProperty("boolean", "boolean", dialog.PropertyBool).
 			AddProperty("textField", "textField", dialog.PropertyTextField).
 			AddProperty("int", "int", dialog.PropertyInt).
+			AddPropertyList("items", "items", []string{"a", "b"}).
+			AddPropertyOptions("dropdown", "dropdown", dialog.PropertyDropdown, []string{"x", "y", "z"}, []string{"y"}).
+			AddPropertyOptions("tags", "tags", dialog.PropertyMultiSelect, []string{"a", "b", "c"}, []string{"a"}).
 			Show(fyneApp)
 		log.Printf("custom dialog result: %#v", result)
 
