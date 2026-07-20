@@ -172,3 +172,48 @@ func TestSetButtonsAndAddPropertyNoOpOnNonCustom(t *testing.T) {
 
 	tapAndWait(t, b.okButton, b.resultCh)
 }
+
+func TestAddPropertyListNoOpOnNonCustom(t *testing.T) {
+	d := NewInfo("hello").AddPropertyList("items", "Items", []string{"a", "b"})
+	if len(d.props) != 0 {
+		t.Errorf("AddPropertyList should have no effect on an info dialog, got %d props", len(d.props))
+	}
+}
+
+func TestAddPropertyOptionsNoOpOnNonCustom(t *testing.T) {
+	d := NewInfo("hello").AddPropertyOptions("choice", "Choice", PropertyDropdown, []string{"x", "y"}, nil)
+	if len(d.props) != 0 {
+		t.Errorf("AddPropertyOptions should have no effect on an info dialog, got %d props", len(d.props))
+	}
+}
+
+func TestAddPropertyListStoresInitialItems(t *testing.T) {
+	d := NewCustom().AddPropertyList("items", "Items", []string{"a", "b"})
+	if len(d.props) != 1 {
+		t.Fatalf("expected 1 prop, got %d", len(d.props))
+	}
+	p := d.props[0]
+	if p.key != "items" || p.label != "Items" || p.kind != PropertyList {
+		t.Errorf("unexpected property: %#v", p)
+	}
+	if len(p.initial) != 2 || p.initial[0] != "a" || p.initial[1] != "b" {
+		t.Errorf("initial = %#v, want [a b]", p.initial)
+	}
+}
+
+func TestAddPropertyOptionsStoresOptionsAndSelected(t *testing.T) {
+	d := NewCustom().AddPropertyOptions("choice", "Choice", PropertyDropdown, []string{"x", "y"}, []string{"y"})
+	if len(d.props) != 1 {
+		t.Fatalf("expected 1 prop, got %d", len(d.props))
+	}
+	p := d.props[0]
+	if p.key != "choice" || p.label != "Choice" || p.kind != PropertyDropdown {
+		t.Errorf("unexpected property: %#v", p)
+	}
+	if len(p.options) != 2 || p.options[0] != "x" || p.options[1] != "y" {
+		t.Errorf("options = %#v, want [x y]", p.options)
+	}
+	if len(p.selected) != 1 || p.selected[0] != "y" {
+		t.Errorf("selected = %#v, want [y]", p.selected)
+	}
+}

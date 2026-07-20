@@ -28,10 +28,13 @@ const (
 type PropertyKind string
 
 const (
-	PropertyLabel     PropertyKind = "label"     // message only, no input, not included in the result
-	PropertyBool      PropertyKind = "bool"      // widget.Check, result value is bool
-	PropertyTextField PropertyKind = "textField" // widget.Entry, result value is string
-	PropertyInt       PropertyKind = "int"       // validated widget.Entry, result value is int
+	PropertyLabel       PropertyKind = "label"       // message only, no input, not included in the result
+	PropertyBool        PropertyKind = "bool"        // widget.Check, result value is bool
+	PropertyTextField   PropertyKind = "textField"   // widget.Entry, result value is string
+	PropertyInt         PropertyKind = "int"         // validated widget.Entry, result value is int
+	PropertyList        PropertyKind = "list"        // editable widget.List, add/remove, result value is []string
+	PropertyDropdown    PropertyKind = "dropdown"    // widget.Select, result value is string
+	PropertyMultiSelect PropertyKind = "multiSelect" // widget.CheckGroup, result value is []string
 )
 
 // ButtonKind is a button that can appear in a custom dialog's button bar.
@@ -48,9 +51,12 @@ const (
 )
 
 type property struct {
-	key   string
-	label string
-	kind  PropertyKind
+	key      string
+	label    string
+	kind     PropertyKind
+	initial  []string // PropertyList seed items
+	options  []string // PropertyDropdown/PropertyMultiSelect choice set
+	selected []string // PropertyDropdown/PropertyMultiSelect pre-selection
 }
 
 // Dialog is a modal dialog under construction. Build one with NewInfo,
@@ -110,6 +116,30 @@ func (d *Dialog) AddProperty(key, label string, kind PropertyKind) *Dialog {
 		return d
 	}
 	d.props = append(d.props, property{key: key, label: label, kind: kind})
+	return d
+}
+
+// AddPropertyList adds an editable list row: an add/remove-capable list of
+// strings seeded with initial. Result value is []string. Only effective on
+// custom dialogs. Chainable.
+func (d *Dialog) AddPropertyList(key, label string, initial []string) *Dialog {
+	if d.kind != KindCustom {
+		return d
+	}
+	d.props = append(d.props, property{key: key, label: label, kind: PropertyList, initial: initial})
+	return d
+}
+
+// AddPropertyOptions adds a dropdown (PropertyDropdown, result value is
+// string) or checkbox multi-select (PropertyMultiSelect, result value is
+// []string) row. options is the fixed choice set; selected are the options
+// pre-chosen. For PropertyDropdown, only selected[0] (if present) is used
+// as the initial selection. Only effective on custom dialogs. Chainable.
+func (d *Dialog) AddPropertyOptions(key, label string, kind PropertyKind, options, selected []string) *Dialog {
+	if d.kind != KindCustom {
+		return d
+	}
+	d.props = append(d.props, property{key: key, label: label, kind: kind, options: options, selected: selected})
 	return d
 }
 
