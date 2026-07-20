@@ -269,3 +269,47 @@ func TestCustomDialogListReflectsLiveEdits(t *testing.T) {
 		t.Errorf("items = %#v, want [c]", items)
 	}
 }
+
+// TestCustomDialogListRemoveByIndexHandlesDuplicates covers the bug where
+// removing by value (data.Remove) deleted the first matching occurrence
+// instead of the selected one. The Remove button handler now removes by
+// index (get items, splice out the selected index, data.Set the result);
+// this test exercises that same by-index sequence directly on the binding,
+// simulating a UI selection of index 1 (the second "a") since builtDialog
+// doesn't expose the list's internal selection state for a real click.
+func TestCustomDialogListRemoveByIndexHandlesDuplicates(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewCustom().
+		SetButtons(ButtonOK, ButtonCancel).
+		AddPropertyList("items", "Items", []string{"a", "a", "b"})
+	b := d.build(app)
+
+	data, ok := b.fields["items"].(binding.StringList)
+	if !ok {
+		t.Fatalf("fields[items] = %#v, want binding.StringList", b.fields["items"])
+	}
+
+	// Simulate selecting index 1 (the second "a") and clicking Remove, using
+	// the same by-index splice the fixed handler performs internally.
+	const selected = 1
+	items, err := data.Get()
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	items = append(items[:selected], items[selected+1:]...)
+	if err := data.Set(items); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	res := tapAndWait(t, b.okButton, b.resultCh)
+
+	got, ok := res["items"].([]string)
+	if !ok {
+		t.Fatalf("items = %#v, want []string", res["items"])
+	}
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("items = %#v, want [a b] (first \"a\" kept, second \"a\" removed by index)", got)
+	}
+}

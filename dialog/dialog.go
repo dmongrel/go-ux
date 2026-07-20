@@ -309,7 +309,8 @@ func buildListProperty(p property, fields map[string]any) fyne.CanvasObject {
 		if selected < 0 || int(selected) >= len(items) {
 			return
 		}
-		_ = data.Remove(items[selected])
+		items = append(items[:selected], items[selected+1:]...)
+		_ = data.Set(items)
 		hasSelection = false
 	})
 
