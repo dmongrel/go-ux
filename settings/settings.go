@@ -6,12 +6,16 @@ package settings
 
 import (
 	"encoding/json"
+	"image/color"
 	"log"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"go-ux/db"
@@ -23,6 +27,21 @@ const componentID = "b6f6c9d1-3f2b-4b8a-9e3a-2f1c7a5d9e10"
 
 const rootUID = ""
 
+// highlightColor is the filled rectangle used to mark a search match, in
+// both the tree and the properties page. Matched text is drawn in black so
+// it stays readable against it.
+var highlightColor = color.NRGBA{R: 255, G: 235, B: 59, A: 255}
+
+// panelBorderColor outlines the two main layout panels (sidebar, properties page).
+var panelBorderColor = color.NRGBA{R: 64, G: 64, B: 64, A: 255}
+
+func textColor(highlighted bool) color.Color {
+	if highlighted {
+		return color.Black
+	}
+	return theme.Color(theme.ColorNameForeground)
+}
+
 // Window is a settings control panel window backed by a db.DB registry.
 type Window struct {
 	win fyne.Window
@@ -30,9 +49,19 @@ type Window struct {
 
 	byParent map[string][]string
 	byID     map[string]db.Node
+	allProps map[string][]db.Property // uid -> properties, prefetched for search
 
 	tree       *widget.Tree
 	formHolder *fyne.Container
+	split      *container.Split
+
+	selectedUID string
+
+	// search state, recomputed on every keystroke
+	searchText string
+	visible    map[string]bool            // nil means "no filter, show everything"
+	descMatch  map[string]bool            // uid -> node description matched the search
+	propMatch  map[string]map[string]bool // uid -> property key -> label matched the search
 
 	// staged holds in-memory edits, keyed by node ID then property key,
 	// not yet written to the db. Apply/OK flush it; Cancel discards it.
@@ -52,25 +81,42 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 		return nil, err
 	}
 	w.indexNodes(nodes)
+	if err := w.prefetchProperties(); err != nil {
+		return nil, err
+	}
 
 	win := app.NewWindow("Settings")
-	win.Resize(fyne.NewSize(1024, 1200))
+	win.Resize(fyne.NewSize(1024, 800))
 	w.win = win
 
 	w.tree = w.buildTree()
 	w.formHolder = container.NewStack()
 
+	search := widget.NewEntry()
+	search.SetPlaceHolder("Search settings...")
+	search.OnChanged = w.applySearch
+
+	clear := widget.NewButtonWithIcon("", theme.ContentClearIcon(), func() {
+		search.SetText("")
+		w.applySearch("")
+	})
+	clear.Importance = widget.LowImportance
+
+	searchRow := container.NewBorder(nil, nil, widget.NewIcon(theme.SearchIcon()), clear, search)
+	sidebar := bordered(container.NewBorder(searchRow, nil, nil, nil, w.tree))
+	formPanel := bordered(container.NewVScroll(w.formHolder))
+
 	buttons := container.NewHBox(
 		layout.NewSpacer(),
+		widget.NewButton("OK", w.handleOK),
 		widget.NewButton("Cancel", w.handleCancel),
 		widget.NewButton("Apply", w.handleApply),
-		widget.NewButton("OK", w.handleOK),
 	)
 
-	split := container.NewHSplit(w.tree, w.formHolder)
-	split.Offset = 0.3
+	w.split = container.NewHSplit(sidebar, formPanel)
+	w.split.Offset = 0.3
 
-	win.SetContent(container.NewBorder(nil, buttons, nil, nil, split))
+	win.SetContent(container.NewBorder(nil, buttons, nil, nil, w.split))
 
 	w.restoreUIState()
 	win.SetCloseIntercept(func() {
@@ -84,6 +130,15 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 // Show displays the settings window.
 func (w *Window) Show() {
 	w.win.Show()
+}
+
+// bordered wraps content in a 1px, 50%-grey outline. Used to frame the two
+// main layout panels (sidebar, properties page).
+func bordered(content fyne.CanvasObject) fyne.CanvasObject {
+	border := canvas.NewRectangle(color.Transparent)
+	border.StrokeColor = panelBorderColor
+	border.StrokeWidth = 1
+	return container.NewStack(border, container.NewPadded(content))
 }
 
 func (w *Window) indexNodes(nodes []db.Node) {
@@ -100,22 +155,58 @@ func (w *Window) indexNodes(nodes []db.Node) {
 	}
 }
 
+// prefetchProperties loads every node's properties up front so search can
+// match against property labels without a round trip per keystroke.
+func (w *Window) prefetchProperties() error {
+	w.allProps = make(map[string][]db.Property, len(w.byID))
+	for uid := range w.byID {
+		nodeID, err := strconv.ParseInt(uid, 10, 64)
+		if err != nil {
+			continue
+		}
+		props, err := w.db.GetProperties(nodeID)
+		if err != nil {
+			return err
+		}
+		w.allProps[uid] = props
+	}
+	return nil
+}
+
 func (w *Window) buildTree() *widget.Tree {
 	t := widget.NewTree(
 		func(uid widget.TreeNodeID) []widget.TreeNodeID {
 			children := w.byParent[uid]
-			ids := make([]widget.TreeNodeID, len(children))
-			copy(ids, children)
+			var ids []widget.TreeNodeID
+			for _, c := range children {
+				if w.visible == nil || w.visible[c] {
+					ids = append(ids, c)
+				}
+			}
 			return ids
 		},
 		func(uid widget.TreeNodeID) bool {
 			return len(w.byParent[uid]) > 0
 		},
 		func(branch bool) fyne.CanvasObject {
-			return widget.NewLabel("")
+			rect := canvas.NewRectangle(color.Transparent)
+			text := canvas.NewText("", textColor(false))
+			return container.NewStack(rect, text)
 		},
 		func(uid widget.TreeNodeID, branch bool, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(w.byID[uid].Description)
+			cell := obj.(*fyne.Container)
+			rect := cell.Objects[0].(*canvas.Rectangle)
+			text := cell.Objects[1].(*canvas.Text)
+			text.Text = w.byID[uid].Description
+			matched := w.descMatch[uid]
+			if matched {
+				rect.FillColor = highlightColor
+			} else {
+				rect.FillColor = color.Transparent
+			}
+			text.Color = textColor(matched)
+			text.Refresh()
+			rect.Refresh()
 		},
 	)
 	t.OnSelected = w.selectNode
@@ -123,24 +214,42 @@ func (w *Window) buildTree() *widget.Tree {
 }
 
 func (w *Window) selectNode(uid widget.TreeNodeID) {
+	if _, err := strconv.ParseInt(uid, 10, 64); err != nil {
+		return
+	}
+	w.selectedUID = uid
+	w.renderProperties(uid)
+}
+
+// renderProperties builds the properties page for uid, highlighting any
+// property whose label matched the current search.
+func (w *Window) renderProperties(uid string) {
 	nodeID, err := strconv.ParseInt(uid, 10, 64)
 	if err != nil {
 		return
 	}
 
-	props, err := w.db.GetProperties(nodeID)
-	if err != nil {
-		log.Printf("settings: get properties for node %d: %v", nodeID, err)
-		return
+	rows := container.NewVBox()
+	for _, p := range w.allProps[uid] {
+		highlighted := w.propMatch[uid] != nil && w.propMatch[uid][p.Key]
+		rows.Add(w.buildPropertyRow(nodeID, p, highlighted))
 	}
 
-	form := widget.NewForm()
-	for _, p := range props {
-		form.Append(p.Label, w.propertyWidget(nodeID, p))
-	}
-
-	w.formHolder.Objects = []fyne.CanvasObject{form}
+	w.formHolder.Objects = []fyne.CanvasObject{rows}
 	w.formHolder.Refresh()
+}
+
+func (w *Window) buildPropertyRow(nodeID int64, p db.Property, highlighted bool) fyne.CanvasObject {
+	label := canvas.NewText(p.Label, textColor(highlighted))
+	label.TextStyle = fyne.TextStyle{Bold: true}
+
+	var labelObj fyne.CanvasObject = label
+	if highlighted {
+		rect := canvas.NewRectangle(highlightColor)
+		labelObj = container.NewStack(rect, label)
+	}
+
+	return container.NewBorder(nil, nil, labelObj, nil, w.propertyWidget(nodeID, p))
 }
 
 func (w *Window) propertyWidget(nodeID int64, p db.Property) fyne.CanvasObject {
@@ -184,6 +293,73 @@ func (w *Window) propertyWidget(nodeID int64, p db.Property) fyne.CanvasObject {
 	}
 }
 
+// applySearch recomputes which tree nodes are visible/highlighted for a
+// type-ahead query. A node is shown if its own description matches, or if
+// any property on its properties page matches (so the user can find it by
+// setting name too); ancestors of a shown node are shown as well so it stays
+// reachable in the tree.
+func (w *Window) applySearch(query string) {
+	w.searchText = query
+	q := strings.ToLower(strings.TrimSpace(query))
+
+	if q == "" {
+		w.visible = nil
+		w.descMatch = nil
+		w.propMatch = nil
+		w.tree.Refresh()
+		if w.selectedUID != "" {
+			w.renderProperties(w.selectedUID)
+		}
+		return
+	}
+
+	visible := make(map[string]bool)
+	descMatch := make(map[string]bool)
+	propMatch := make(map[string]map[string]bool)
+
+	for uid, node := range w.byID {
+		if strings.Contains(strings.ToLower(node.Description), q) {
+			descMatch[uid] = true
+			markVisible(w.byID, uid, visible)
+		}
+	}
+
+	for uid, props := range w.allProps {
+		for _, p := range props {
+			if !strings.Contains(strings.ToLower(p.Label), q) {
+				continue
+			}
+			if propMatch[uid] == nil {
+				propMatch[uid] = make(map[string]bool)
+			}
+			propMatch[uid][p.Key] = true
+			markVisible(w.byID, uid, visible)
+		}
+	}
+
+	w.visible = visible
+	w.descMatch = descMatch
+	w.propMatch = propMatch
+
+	w.tree.Refresh()
+	w.tree.OpenAllBranches()
+	if w.selectedUID != "" {
+		w.renderProperties(w.selectedUID)
+	}
+}
+
+// markVisible marks uid and all of its ancestors as visible.
+func markVisible(byID map[string]db.Node, uid string, visible map[string]bool) {
+	for {
+		visible[uid] = true
+		node := byID[uid]
+		if node.ParentID == nil {
+			return
+		}
+		uid = strconv.FormatInt(*node.ParentID, 10)
+	}
+}
+
 func (w *Window) stage(nodeID int64, key, value string) {
 	if w.staged[nodeID] == nil {
 		w.staged[nodeID] = make(map[string]string)
@@ -212,10 +388,11 @@ func (w *Window) handleCancel() {
 
 // uiState is the blob persisted for the settings window's own UI state.
 // Fyne's desktop driver does not expose a cross-platform window position API,
-// so only size is tracked.
+// so only size and the sidebar splitter position are tracked.
 type uiState struct {
-	Width  float32
-	Height float32
+	Width         float32
+	Height        float32
+	SidebarOffset float64
 }
 
 func (w *Window) restoreUIState() {
@@ -236,11 +413,19 @@ func (w *Window) restoreUIState() {
 	if s.Width > 0 && s.Height > 0 {
 		w.win.Resize(fyne.NewSize(s.Width, s.Height))
 	}
+	if s.SidebarOffset > 0 && s.SidebarOffset < 1 {
+		w.split.Offset = s.SidebarOffset
+		w.split.Refresh()
+	}
 }
 
 func (w *Window) saveUIState() {
 	size := w.win.Canvas().Size()
-	blob, err := json.Marshal(uiState{Width: size.Width, Height: size.Height})
+	blob, err := json.Marshal(uiState{
+		Width:         size.Width,
+		Height:        size.Height,
+		SidebarOffset: w.split.Offset,
+	})
 	if err != nil {
 		log.Printf("settings: marshal ui state: %v", err)
 		return
