@@ -1,0 +1,52 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Built server binary (bare, no extension)
+/epub-novel-mcp-server
+
+# Test binaries
+*_test
+
+# Output of 'go build'
+*.out
+
+# Dependency directories
+vendor/
+dist/
+
+# Go module cache
+.cache/go-build/
+
+# IDE specific files
+.idea/
+.junie/
+.vscode/
+.ai/
+.claude/
+*.swp
+*.bak
+*.swo
+
+# Log files
+logs/
+*.log
+
+# Environment variables
+.env
+.env.*
+
+
+# OS generated files
+.DS_Store
+Thumbs.db
+/test_fdx/
+/tests/
+/.artifacts/
+
+# Full-resolution parchment originals, kept locally for review only —
+# the shipped versions under reader/parchment_images/ are downscaled.
+/reader/parchment_images_bak/
