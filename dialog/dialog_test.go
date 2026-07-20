@@ -4,10 +4,38 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/data/binding"
 	fynetest "fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 )
+
+// findAll recursively walks a fyne.CanvasObject tree (through *fyne.Container
+// and *container.Scroll, the two container kinds used by this package's
+// dialog layouts) and collects every object for which match returns true.
+func findAll(root fyne.CanvasObject, match func(fyne.CanvasObject) bool) []fyne.CanvasObject {
+	var found []fyne.CanvasObject
+	var walk func(o fyne.CanvasObject)
+	walk = func(o fyne.CanvasObject) {
+		if o == nil {
+			return
+		}
+		if match(o) {
+			found = append(found, o)
+		}
+		switch c := o.(type) {
+		case *fyne.Container:
+			for _, child := range c.Objects {
+				walk(child)
+			}
+		case *container.Scroll:
+			walk(c.Content)
+		}
+	}
+	walk(root)
+	return found
+}
 
 // tapAndWait taps btn on its own goroutine (mirroring real usage, where the
 // click happens on Fyne's UI goroutine while the caller blocks reading
@@ -271,45 +299,63 @@ func TestCustomDialogListReflectsLiveEdits(t *testing.T) {
 }
 
 // TestCustomDialogListRemoveByIndexHandlesDuplicates covers the bug where
-// removing by value (data.Remove) deleted the first matching occurrence
-// instead of the selected one. The Remove button handler now removes by
-// index (get items, splice out the selected index, data.Set the result);
-// this test exercises that same by-index sequence directly on the binding,
-// simulating a UI selection of index 1 (the second "a") since builtDialog
-// doesn't expose the list's internal selection state for a real click.
+// removing by value (data.Remove(items[selected])) deleted the first
+// matching occurrence instead of the selected one. The Remove button
+// handler now removes by index (get items, splice out the selected index,
+// data.Set the result). This test drives the real widgets: it locates the
+// actual *widget.List and "Remove" *widget.Button inside the built dialog's
+// window content, selects an item in the real list, and taps the real
+// button, so it would fail against the old by-value implementation.
+//
+// Seed data ["a", "b", "a"] with selection at index 2 (the trailing "a") is
+// chosen deliberately: the old and new implementations disagree on the
+// result.
+//   - Old (buggy, by value): data.Remove(items[2]) == data.Remove("a")
+//     removes the FIRST "a", at index 0, leaving ["b", "a"].
+//   - New (fixed, by index): splicing out index 2 directly leaves ["a", "b"].
+//
+// The two results differ in both order and which element survives, so this
+// seed/selection pair is a real regression guard, unlike ["a", "a", "b"]
+// selecting index 1, where by-value and by-index removal coincidentally
+// produce the same ["a", "b"] result.
 func TestCustomDialogListRemoveByIndexHandlesDuplicates(t *testing.T) {
 	app := fynetest.NewApp()
 	defer app.Quit()
 
 	d := NewCustom().
 		SetButtons(ButtonOK, ButtonCancel).
-		AddPropertyList("items", "Items", []string{"a", "a", "b"})
+		AddPropertyList("items", "Items", []string{"a", "b", "a"})
 	b := d.build(app)
 
-	data, ok := b.fields["items"].(binding.StringList)
-	if !ok {
-		t.Fatalf("fields[items] = %#v, want binding.StringList", b.fields["items"])
+	var list *widget.List
+	var removeButton *widget.Button
+	for _, o := range findAll(b.win.Content(), func(fyne.CanvasObject) bool { return true }) {
+		switch v := o.(type) {
+		case *widget.List:
+			list = v
+		case *widget.Button:
+			if v.Text == "Remove" {
+				removeButton = v
+			}
+		}
+	}
+	if list == nil {
+		t.Fatal("could not find the list widget in the built dialog")
+	}
+	if removeButton == nil {
+		t.Fatal("could not find the Remove button in the built dialog")
 	}
 
-	// Simulate selecting index 1 (the second "a") and clicking Remove, using
-	// the same by-index splice the fixed handler performs internally.
-	const selected = 1
-	items, err := data.Get()
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	items = append(items[:selected], items[selected+1:]...)
-	if err := data.Set(items); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
+	list.Select(2) // the trailing "a", at index 2
+	fynetest.Tap(removeButton)
 
 	res := tapAndWait(t, b.okButton, b.resultCh)
 
-	got, ok := res["items"].([]string)
+	items, ok := res["items"].([]string)
 	if !ok {
 		t.Fatalf("items = %#v, want []string", res["items"])
 	}
-	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
-		t.Errorf("items = %#v, want [a b] (first \"a\" kept, second \"a\" removed by index)", got)
+	if len(items) != 2 || items[0] != "a" || items[1] != "b" {
+		t.Errorf("items = %#v, want [a b] (trailing \"a\" removed by index, not the first \"a\")", items)
 	}
 }
