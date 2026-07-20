@@ -263,6 +263,20 @@ func (d *Dialog) buildCustomForm() (fyne.CanvasObject, map[string]any) {
 
 		case PropertyList:
 			rows.Add(buildListProperty(p, fields))
+
+		case PropertyDropdown:
+			field := widget.NewSelect(p.options, nil)
+			if len(p.selected) > 0 {
+				field.SetSelected(p.selected[0])
+			}
+			fields[p.key] = field
+			rows.Add(container.NewBorder(nil, nil, widget.NewLabel(p.label), nil, field))
+
+		case PropertyMultiSelect:
+			field := widget.NewCheckGroup(p.options, nil)
+			field.SetSelected(p.selected)
+			fields[p.key] = field
+			rows.Add(container.NewVBox(widget.NewLabel(p.label), field))
 		}
 	}
 
@@ -343,6 +357,10 @@ func (d *Dialog) collectResult(fields map[string]any) map[string]any {
 		case PropertyList:
 			items, _ := field.(binding.StringList).Get()
 			result[p.key] = items
+		case PropertyDropdown:
+			result[p.key] = field.(*widget.Select).Selected
+		case PropertyMultiSelect:
+			result[p.key] = field.(*widget.CheckGroup).Selected
 		}
 	}
 	return result

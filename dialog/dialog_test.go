@@ -359,3 +359,57 @@ func TestCustomDialogListRemoveByIndexHandlesDuplicates(t *testing.T) {
 		t.Errorf("items = %#v, want [a b] (trailing \"a\" removed by index, not the first \"a\")", items)
 	}
 }
+
+func TestCustomDialogDropdownDefaultAndSelection(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewCustom().
+		SetButtons(ButtonOK, ButtonCancel).
+		AddPropertyOptions("choice", "Choice", PropertyDropdown, []string{"x", "y", "z"}, []string{"y"})
+	b := d.build(app)
+
+	sel, ok := b.fields["choice"].(*widget.Select)
+	if !ok {
+		t.Fatalf("fields[choice] = %#v, want *widget.Select", b.fields["choice"])
+	}
+	if sel.Selected != "y" {
+		t.Errorf("initial Selected = %q, want %q", sel.Selected, "y")
+	}
+	sel.SetSelected("z")
+
+	res := tapAndWait(t, b.okButton, b.resultCh)
+
+	if res["choice"] != "z" {
+		t.Errorf("choice = %#v, want %q", res["choice"], "z")
+	}
+}
+
+func TestCustomDialogMultiSelectDefaultAndSelection(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewCustom().
+		SetButtons(ButtonOK, ButtonCancel).
+		AddPropertyOptions("tags", "Tags", PropertyMultiSelect, []string{"a", "b", "c"}, []string{"a"})
+	b := d.build(app)
+
+	group, ok := b.fields["tags"].(*widget.CheckGroup)
+	if !ok {
+		t.Fatalf("fields[tags] = %#v, want *widget.CheckGroup", b.fields["tags"])
+	}
+	if len(group.Selected) != 1 || group.Selected[0] != "a" {
+		t.Errorf("initial Selected = %#v, want [a]", group.Selected)
+	}
+	group.SetSelected([]string{"a", "c"})
+
+	res := tapAndWait(t, b.okButton, b.resultCh)
+
+	tags, ok := res["tags"].([]string)
+	if !ok {
+		t.Fatalf("tags = %#v, want []string", res["tags"])
+	}
+	if len(tags) != 2 || tags[0] != "a" || tags[1] != "c" {
+		t.Errorf("tags = %#v, want [a c]", tags)
+	}
+}
