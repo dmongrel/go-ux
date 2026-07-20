@@ -72,15 +72,15 @@ func main() {
 
 ## Custom dialog property kinds
 
-| `PropertyKind`        | Widget                     | Result type | Notes                                                                 |
-|------------------------|-----------------------------|--------------|------------------------------------------------------------------------|
-| `PropertyLabel`        | `widget.Label`              | (none)       | Message only; not included in `Show`'s result map.                    |
-| `PropertyBool`         | `widget.Check`               | `bool`       |                                                                          |
-| `PropertyTextField`    | `widget.Entry`               | `string`     |                                                                          |
-| `PropertyInt`          | validated `widget.Entry`     | `int`        | Rejects non-integer input via the entry's validator.                  |
-| `PropertyList`         | `widget.List` + add/remove   | `[]string`   | Added via `AddPropertyList`; add/remove edits the bound item list.    |
-| `PropertyDropdown`     | `widget.Select`              | `string`     | Added via `AddPropertyOptions`; closed set of `options`, no free text.|
-| `PropertyMultiSelect`  | `widget.CheckGroup`          | `[]string`   | Added via `AddPropertyOptions`; any subset of `options`.              |
+| `PropertyKind`        | Widget                    | Result type | Notes                                                                  |
+|------------------------|----------------------------|--------------|-------------------------------------------------------------------------|
+| `PropertyLabel`        | `widget.Label`             | (none)       | Message only; not included in `Show`'s result map.                     |
+| `PropertyBool`         | `widget.Check`             | `bool`       |                                                                          |
+| `PropertyTextField`    | `widget.Entry`             | `string`     |                                                                          |
+| `PropertyInt`          | validated `widget.Entry`   | `int`        | Rejects non-integer input via the entry's validator.                   |
+| `PropertyList`         | `widget.List` + add/remove | `[]string`   | Added via `AddPropertyList`; add/remove edits the bound item list.     |
+| `PropertyDropdown`     | `widget.Select`            | `string`     | Added via `AddPropertyOptions`; closed set of `options`, no free text. |
+| `PropertyMultiSelect`  | `widget.CheckGroup`        | `[]string`   | Added via `AddPropertyOptions`; any subset of `options`.               |
 
 `AddPropertyOptions`'s `selected` argument is the pre-chosen subset for
 `PropertyMultiSelect`, or a single-element slice (`selected[0]`) for

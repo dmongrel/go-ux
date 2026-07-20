@@ -76,7 +76,7 @@ func NewInfo(message string) *Dialog {
 	return &Dialog{kind: KindInfo, title: "Info", message: message, buttons: []ButtonKind{ButtonOK}}
 }
 
-// NewError builds an informational dialog showing message in a scrollable
+// NewError builds an error dialog showing message in a scrollable
 // text area, with a single OK button and the title "Error".
 func NewError(message string) *Dialog {
 	return &Dialog{kind: KindError, title: "Error", message: message, buttons: []ButtonKind{ButtonOK}}
@@ -152,8 +152,9 @@ func (d *Dialog) AddPropertyOptions(key, label string, kind PropertyKind, option
 // Show blocks here waiting for it.
 //
 // For a custom dialog, OK returns a map keyed by each AddProperty's key with
-// a value typed per its PropertyKind (bool/string/int); Cancel and closing
-// the window both return nil. info/error dialogs always return nil.
+// a value typed per its PropertyKind (bool/string/int, or []string for list
+// and multi-select; dropdown is string); Cancel and closing the window both
+// return nil. info/error dialogs always return nil.
 func (d *Dialog) Show(fyneApp fyne.App) map[string]any {
 	b := d.build(fyneApp)
 	b.win.Show()
@@ -295,7 +296,6 @@ func buildListProperty(p property, fields map[string]any) fyne.CanvasObject {
 		func(item binding.DataItem, obj fyne.CanvasObject) {
 			obj.(*widget.Label).Bind(item.(binding.String))
 		})
-	list.Resize(fyne.NewSize(0, 120))
 
 	var selected widget.ListItemID
 	hasSelection := false
@@ -325,11 +325,11 @@ func buildListProperty(p property, fields map[string]any) fyne.CanvasObject {
 		}
 		items = append(items[:selected], items[selected+1:]...)
 		_ = data.Set(items)
+		list.UnselectAll()
 		hasSelection = false
 	})
 
-	listArea := container.NewBorder(nil, nil, nil, nil, list)
-	listArea.Resize(fyne.NewSize(0, 120))
+	listArea := container.NewGridWrap(fyne.NewSize(200, 120), list)
 	controls := container.NewBorder(nil, nil, nil, container.NewHBox(addButton, removeButton), entry)
 
 	return container.NewVBox(widget.NewLabel(p.label), listArea, controls)
