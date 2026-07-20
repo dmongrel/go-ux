@@ -103,6 +103,62 @@ func TestSetTitleOverridesDefault(t *testing.T) {
 	tapAndWait(t, b.okButton, b.resultCh)
 }
 
+func TestDefaultSizeInfoAndErrorAre800x600(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	for _, d := range []*Dialog{NewInfo("hello"), NewError("boom")} {
+		b := d.build(app)
+		size := b.win.Canvas().Size()
+		if size.Width != 800 || size.Height != 600 {
+			t.Errorf("%s size = %v, want 800x600", d.kind, size)
+		}
+		tapAndWait(t, b.okButton, b.resultCh)
+	}
+}
+
+func TestDefaultSizeCustomIs800x800(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewCustom()
+	b := d.build(app)
+
+	size := b.win.Canvas().Size()
+	if size.Width != 800 || size.Height != 800 {
+		t.Errorf("custom size = %v, want 800x800", size)
+	}
+	tapAndWait(t, b.okButton, b.resultCh)
+}
+
+func TestSetSizeOverridesDefault(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewInfo("hello").SetSize(400, 300)
+	b := d.build(app)
+
+	size := b.win.Canvas().Size()
+	if size.Width != 400 || size.Height != 300 {
+		t.Errorf("size = %v, want 400x300", size)
+	}
+	tapAndWait(t, b.okButton, b.resultCh)
+}
+
+func TestSetSizeIgnoresNonPositiveValues(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewInfo("hello").SetSize(0, 300).SetSize(400, 0).SetSize(-1, -1)
+	b := d.build(app)
+
+	size := b.win.Canvas().Size()
+	if size.Width != 800 || size.Height != 600 {
+		t.Errorf("size = %v, want default 800x600 (invalid SetSize calls should be no-ops)", size)
+	}
+	tapAndWait(t, b.okButton, b.resultCh)
+}
+
 func TestCustomDialogOKCollectsTypedResult(t *testing.T) {
 	app := fynetest.NewApp()
 	defer app.Quit()

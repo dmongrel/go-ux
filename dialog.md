@@ -15,6 +15,7 @@ func NewError(message string) *Dialog
 func NewCustom() *Dialog
 
 func (d *Dialog) SetTitle(title string) *Dialog
+func (d *Dialog) SetSize(width, height float32) *Dialog
 func (d *Dialog) SetButtons(buttons ...ButtonKind) *Dialog
 func (d *Dialog) AddProperty(key, label string, kind PropertyKind) *Dialog
 func (d *Dialog) AddPropertyList(key, label string, initial []string) *Dialog
@@ -34,6 +35,11 @@ dialogs.
 window is closed. For a custom dialog, OK returns a map keyed by each
 property's `key`; Cancel and closing the window both return `nil`. Info and
 error dialogs always return `nil`.
+
+The window defaults to 800x600 for info/error dialogs and 800x800 for custom
+dialogs (custom dialogs tend to hold more content). `SetSize` overrides
+either default; both `width` and `height` must be positive or the call is a
+no-op.
 
 ## Minimal usage
 

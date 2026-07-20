@@ -13,10 +13,11 @@ already defines.
 
 ```go
 func NewWindow(app fyne.App, database *db.DB) (*Window, error)
+func (w *Window) SetSize(width, height float32) *Window
 func (w *Window) Show()
 ```
 
-That's the entire surface. `NewWindow`:
+`NewWindow`:
 
 1. Reads the full settings tree via `database.ListSettings()` and every
    node's properties via `database.GetProperties()` (used to build the tree
@@ -24,6 +25,12 @@ That's the entire surface. `NewWindow`:
 2. Builds the Fyne window (1024x800 default, resizable, title "Settings").
 3. Restores the window's own saved size and sidebar-splitter position from
    `database.LoadUIState()` (see "Own UI state" below).
+
+`SetSize` overrides the window's current size — the 1024x800 default, or
+whatever was just restored from saved UI state in step 3 above, whichever
+applies. Both `width` and `height` must be positive or the call is a no-op.
+Call it after `NewWindow` and before `Show` if you want to force a specific
+size regardless of what was previously saved.
 
 `Show()` just calls the underlying `fyne.Window.Show()`. Nothing else is
 exported — there is no way to reach into the tree, force a selection, or

@@ -49,6 +49,10 @@ const (
 const (
 	defaultWidth  = 800
 	defaultHeight = 600
+
+	// defaultCustomHeight overrides defaultHeight for KindCustom, which
+	// tends to hold more content (many properties) than a plain message.
+	defaultCustomHeight = 800
 )
 
 type property struct {
@@ -68,6 +72,8 @@ type Dialog struct {
 	message string
 	buttons []ButtonKind
 	props   []property
+	width   float32
+	height  float32
 }
 
 // NewInfo builds an informational dialog showing message in a scrollable
@@ -92,6 +98,17 @@ func NewCustom() *Dialog {
 // SetTitle overrides the dialog's window title. Chainable.
 func (d *Dialog) SetTitle(title string) *Dialog {
 	d.title = title
+	return d
+}
+
+// SetSize overrides the dialog window's default size (800x600 for info and
+// error dialogs, 800x800 for custom dialogs). Both width and height must be
+// positive or the call has no effect. Chainable.
+func (d *Dialog) SetSize(width, height float32) *Dialog {
+	if width > 0 && height > 0 {
+		d.width = width
+		d.height = height
+	}
 	return d
 }
 
@@ -172,9 +189,21 @@ type builtDialog struct {
 	fields       map[string]any // property key -> input widget or binding, custom dialogs only
 }
 
+// size returns the window size to use: an explicit SetSize override if one
+// was given, otherwise the kind-specific default.
+func (d *Dialog) size() (width, height float32) {
+	if d.width > 0 && d.height > 0 {
+		return d.width, d.height
+	}
+	if d.kind == KindCustom {
+		return defaultWidth, defaultCustomHeight
+	}
+	return defaultWidth, defaultHeight
+}
+
 func (d *Dialog) build(fyneApp fyne.App) *builtDialog {
 	win := fyneApp.NewWindow(d.title)
-	win.Resize(fyne.NewSize(defaultWidth, defaultHeight))
+	win.Resize(fyne.NewSize(d.size()))
 
 	b := &builtDialog{
 		win:      win,

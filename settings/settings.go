@@ -127,6 +127,17 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 	return w, nil
 }
 
+// SetSize overrides the settings window's size (default 1024x800, or a
+// previously saved size restored from UI state — see "Own UI state" in
+// settings.md). Both width and height must be positive or the call has no
+// effect. Call before Show. Chainable.
+func (w *Window) SetSize(width, height float32) *Window {
+	if width > 0 && height > 0 {
+		w.win.Resize(fyne.NewSize(width, height))
+	}
+	return w
+}
+
 // Show displays the settings window.
 func (w *Window) Show() {
 	w.win.Show()
