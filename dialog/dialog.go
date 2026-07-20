@@ -11,6 +11,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/data/binding"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
@@ -167,7 +168,7 @@ type builtDialog struct {
 	resultCh     chan map[string]any
 	okButton     *widget.Button
 	cancelButton *widget.Button
-	fields       map[string]fyne.CanvasObject // property key -> input widget, custom dialogs only
+	fields       map[string]any // property key -> input widget or binding, custom dialogs only
 }
 
 func (d *Dialog) build(fyneApp fyne.App) *builtDialog {
@@ -232,8 +233,8 @@ func buildMessageArea(message string) fyne.CanvasObject {
 	return container.NewVScroll(text)
 }
 
-func (d *Dialog) buildCustomForm() (fyne.CanvasObject, map[string]fyne.CanvasObject) {
-	fields := make(map[string]fyne.CanvasObject)
+func (d *Dialog) buildCustomForm() (fyne.CanvasObject, map[string]any) {
+	fields := make(map[string]any)
 	rows := container.NewVBox()
 
 	for _, p := range d.props {
@@ -259,13 +260,67 @@ func (d *Dialog) buildCustomForm() (fyne.CanvasObject, map[string]fyne.CanvasObj
 			}
 			fields[p.key] = field
 			rows.Add(container.NewBorder(nil, nil, widget.NewLabel(p.label), nil, field))
+
+		case PropertyList:
+			rows.Add(buildListProperty(p, fields))
 		}
 	}
 
 	return container.NewVScroll(rows), fields
 }
 
-func (d *Dialog) collectResult(fields map[string]fyne.CanvasObject) map[string]any {
+// buildListProperty builds an editable list row (bound list + entry/add/remove
+// controls) for p and registers p's binding.StringList in fields.
+func buildListProperty(p property, fields map[string]any) fyne.CanvasObject {
+	data := binding.NewStringList()
+	_ = data.Set(p.initial)
+	fields[p.key] = data
+
+	list := widget.NewListWithData(data,
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(item binding.DataItem, obj fyne.CanvasObject) {
+			obj.(*widget.Label).Bind(item.(binding.String))
+		})
+	list.Resize(fyne.NewSize(0, 120))
+
+	var selected widget.ListItemID
+	hasSelection := false
+	list.OnSelected = func(id widget.ListItemID) {
+		selected = id
+		hasSelection = true
+	}
+	list.OnUnselected = func(widget.ListItemID) {
+		hasSelection = false
+	}
+
+	entry := widget.NewEntry()
+	addButton := widget.NewButton("Add", func() {
+		if entry.Text == "" {
+			return
+		}
+		_ = data.Append(entry.Text)
+		entry.SetText("")
+	})
+	removeButton := widget.NewButton("Remove", func() {
+		if !hasSelection {
+			return
+		}
+		items, _ := data.Get()
+		if selected < 0 || int(selected) >= len(items) {
+			return
+		}
+		_ = data.Remove(items[selected])
+		hasSelection = false
+	})
+
+	listArea := container.NewBorder(nil, nil, nil, nil, list)
+	listArea.Resize(fyne.NewSize(0, 120))
+	controls := container.NewBorder(nil, nil, nil, container.NewHBox(addButton, removeButton), entry)
+
+	return container.NewVBox(widget.NewLabel(p.label), listArea, controls)
+}
+
+func (d *Dialog) collectResult(fields map[string]any) map[string]any {
 	if d.kind != KindCustom {
 		return nil
 	}
@@ -284,6 +339,9 @@ func (d *Dialog) collectResult(fields map[string]fyne.CanvasObject) map[string]a
 		case PropertyInt:
 			n, _ := strconv.Atoi(field.(*widget.Entry).Text)
 			result[p.key] = n
+		case PropertyList:
+			items, _ := field.(binding.StringList).Get()
+			result[p.key] = items
 		}
 	}
 	return result

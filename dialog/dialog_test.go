@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2/data/binding"
 	fynetest "fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 )
@@ -215,5 +216,56 @@ func TestAddPropertyOptionsStoresOptionsAndSelected(t *testing.T) {
 	}
 	if len(p.selected) != 1 || p.selected[0] != "y" {
 		t.Errorf("selected = %#v, want [y]", p.selected)
+	}
+}
+
+func TestCustomDialogListDefaultsToInitialItems(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewCustom().
+		SetButtons(ButtonOK, ButtonCancel).
+		AddPropertyList("items", "Items", []string{"a", "b"})
+	b := d.build(app)
+
+	res := tapAndWait(t, b.okButton, b.resultCh)
+
+	items, ok := res["items"].([]string)
+	if !ok {
+		t.Fatalf("items = %#v, want []string", res["items"])
+	}
+	if len(items) != 2 || items[0] != "a" || items[1] != "b" {
+		t.Errorf("items = %#v, want [a b]", items)
+	}
+}
+
+func TestCustomDialogListReflectsLiveEdits(t *testing.T) {
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	d := NewCustom().
+		SetButtons(ButtonOK, ButtonCancel).
+		AddPropertyList("items", "Items", []string{"a"})
+	b := d.build(app)
+
+	data, ok := b.fields["items"].(binding.StringList)
+	if !ok {
+		t.Fatalf("fields[items] = %#v, want binding.StringList", b.fields["items"])
+	}
+	if err := data.Append("c"); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := data.Remove("a"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	res := tapAndWait(t, b.okButton, b.resultCh)
+
+	items, ok := res["items"].([]string)
+	if !ok {
+		t.Fatalf("items = %#v, want []string", res["items"])
+	}
+	if len(items) != 1 || items[0] != "c" {
+		t.Errorf("items = %#v, want [c]", items)
 	}
 }
