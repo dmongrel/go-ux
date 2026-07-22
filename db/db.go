@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go-ux/internal/sqlite"
 )
@@ -45,6 +46,9 @@ type Property struct {
 // DB is a handle to the go-ux persistence store.
 type DB struct {
 	conn *sql.DB
+
+	mu        sync.Mutex
+	listeners map[int64][]func(values map[string]string)
 }
 
 // Open opens (creating if necessary) the SQLite database at path. path may be
@@ -54,7 +58,7 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DB{conn: conn}, nil
+	return &DB{conn: conn, listeners: make(map[int64][]func(values map[string]string))}, nil
 }
 
 // Close closes the underlying database connection.
@@ -133,7 +137,51 @@ func (d *DB) SaveProperties(nodeID int64, values map[string]string) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	d.notifyPropertiesChanged(nodeID, values)
+	return nil
+}
+
+// OnPropertiesChanged registers fn to be called, synchronously and on
+// whatever goroutine calls it, after every successful SaveProperties(nodeID,
+// ...) — with the same values map that was passed to it. Returns an
+// unsubscribe function; safe to call OnPropertiesChanged and the returned
+// function from any goroutine.
+//
+// This exists so a UI displaying nodeID's properties (go-ux/settings.Window)
+// can react to a write it didn't itself make — e.g. go-ux/terminal writing a
+// live Ctrl+scroll font-size change directly to the db while a Settings
+// window happens to be open on the same node.
+func (d *DB) OnPropertiesChanged(nodeID int64, fn func(values map[string]string)) (unsubscribe func()) {
+	d.mu.Lock()
+	d.listeners[nodeID] = append(d.listeners[nodeID], fn)
+	idx := len(d.listeners[nodeID]) - 1
+	d.mu.Unlock()
+
+	return func() {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		fns := d.listeners[nodeID]
+		if idx >= len(fns) || fns[idx] == nil {
+			return
+		}
+		fns[idx] = nil // leave a hole rather than reslicing, so other subscribers' idx stay valid
+	}
+}
+
+func (d *DB) notifyPropertiesChanged(nodeID int64, values map[string]string) {
+	d.mu.Lock()
+	fns := append([]func(map[string]string){}, d.listeners[nodeID]...)
+	d.mu.Unlock()
+
+	for _, fn := range fns {
+		if fn != nil {
+			fn(values)
+		}
+	}
 }
 
 // AddNode inserts a settings tree node and returns its ID. parentID is nil for

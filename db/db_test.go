@@ -138,3 +138,78 @@ func TestUIState(t *testing.T) {
 		t.Fatalf("LoadUIState after overwrite = %q, want the updated blob", blob)
 	}
 }
+
+func TestOnPropertiesChangedFiresAfterSaveProperties(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Notify Test", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "size", "Size", db.PropertyInt, "10", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	var got map[string]string
+	unsubscribe := d.OnPropertiesChanged(nodeID, func(values map[string]string) {
+		got = values
+	})
+	defer unsubscribe()
+
+	if err := d.SaveProperties(nodeID, map[string]string{"size": "20"}); err != nil {
+		t.Fatalf("SaveProperties: %v", err)
+	}
+	if got == nil {
+		t.Fatal("OnPropertiesChanged callback did not fire")
+	}
+	if got["size"] != "20" {
+		t.Errorf("callback values[\"size\"] = %q, want %q", got["size"], "20")
+	}
+
+	unsubscribe()
+	got = nil
+	if err := d.SaveProperties(nodeID, map[string]string{"size": "30"}); err != nil {
+		t.Fatalf("SaveProperties (after unsubscribe): %v", err)
+	}
+	if got != nil {
+		t.Error("callback fired after unsubscribe")
+	}
+}
+
+func TestOnPropertiesChangedOnlyFiresForItsOwnNode(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeA, err := d.AddNode(nil, "A", 0)
+	if err != nil {
+		t.Fatalf("AddNode A: %v", err)
+	}
+	nodeB, err := d.AddNode(nil, "B", 0)
+	if err != nil {
+		t.Fatalf("AddNode B: %v", err)
+	}
+	if err := d.AddProperty(nodeA, "k", "K", db.PropertyString, "v", nil); err != nil {
+		t.Fatalf("AddProperty A: %v", err)
+	}
+	if err := d.AddProperty(nodeB, "k", "K", db.PropertyString, "v", nil); err != nil {
+		t.Fatalf("AddProperty B: %v", err)
+	}
+
+	fired := false
+	unsubscribe := d.OnPropertiesChanged(nodeA, func(map[string]string) { fired = true })
+	defer unsubscribe()
+
+	if err := d.SaveProperties(nodeB, map[string]string{"k": "changed"}); err != nil {
+		t.Fatalf("SaveProperties(nodeB): %v", err)
+	}
+	if fired {
+		t.Error("nodeA's callback fired for a write to nodeB")
+	}
+}
