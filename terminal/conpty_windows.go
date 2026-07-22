@@ -202,12 +202,19 @@ func (s *conPTYSession) Resize(cols, rows int) error {
 // cmd.exe processes surviving Close), not a speculative precaution.
 func (s *conPTYSession) Close() error {
 	s.closeOnce.Do(func() {
-		windows.TerminateProcess(s.process, 0)
-		windows.ClosePseudoConsole(s.hpc)
-		windows.CloseHandle(s.stdinWrite)
-		windows.CloseHandle(s.stdoutRead)
-		windows.CloseHandle(s.process)
-		windows.CloseHandle(s.thread)
+		recordErr := func(err error, wrap string) {
+			if err == nil || s.closeErr != nil {
+				return
+			}
+			s.closeErr = fmt.Errorf("terminal: %s: %w", wrap, err)
+		}
+
+		recordErr(windows.TerminateProcess(s.process, 0), "TerminateProcess")
+		windows.ClosePseudoConsole(s.hpc) // no error result to capture
+		recordErr(windows.CloseHandle(s.stdinWrite), "CloseHandle stdinWrite")
+		recordErr(windows.CloseHandle(s.stdoutRead), "CloseHandle stdoutRead")
+		recordErr(windows.CloseHandle(s.process), "CloseHandle process")
+		recordErr(windows.CloseHandle(s.thread), "CloseHandle thread")
 	})
 	return s.closeErr
 }
