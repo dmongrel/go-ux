@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -245,6 +247,104 @@ func readForDuration(t *testing.T, sess ptySession, d time.Duration) string {
 			return out.String()
 		}
 	}
+}
+
+// TestBuildEnvBlockNilWhenEmpty confirms an empty/nil overrides map produces
+// a nil block, so CreateProcess is told to fully inherit the parent's
+// environment (Windows behavior for a NULL lpEnvironment) — the default
+// behavior for the common case where no caller sets ShellDef.Env.
+func TestBuildEnvBlockNilWhenEmpty(t *testing.T) {
+	block, err := buildEnvBlock(nil)
+	if err != nil {
+		t.Fatalf("buildEnvBlock(nil): %v", err)
+	}
+	if block != nil {
+		t.Errorf("buildEnvBlock(nil) = %v, want nil", block)
+	}
+
+	block, err = buildEnvBlock(map[string]string{})
+	if err != nil {
+		t.Fatalf("buildEnvBlock(empty map): %v", err)
+	}
+	if block != nil {
+		t.Errorf("buildEnvBlock(empty map) = %v, want nil", block)
+	}
+}
+
+// TestBuildEnvBlockMergesOverridesWithInheritedEnv proves, at the level of
+// the actual argument CreateProcess receives, that overrides both add new
+// variables and override existing inherited ones — deterministically and
+// without spawning any process, unlike TestNewPtySessionHonorsEnv above
+// (which can only observe this end-to-end through ConPTY's broken output
+// pipe on this machine). This is the test that actually exercises the
+// wiring the whole-branch review flagged as silently ignored.
+func TestBuildEnvBlockMergesOverridesWithInheritedEnv(t *testing.T) {
+	t.Setenv("GOUX_TEST_INHERITED", "inherited-value")
+
+	block, err := buildEnvBlock(map[string]string{
+		"GOUX_TEST_NEW":       "new-value",
+		"GOUX_TEST_INHERITED": "overridden-value",
+	})
+	if err != nil {
+		t.Fatalf("buildEnvBlock: %v", err)
+	}
+	if block == nil {
+		t.Fatal("buildEnvBlock returned nil block for non-empty overrides")
+	}
+
+	entries := decodeEnvBlock(block)
+
+	// Windows environment variable names are case-insensitive; os.Environ()
+	// reflects whatever case this process actually inherited, so compare
+	// case-insensitively rather than assuming a specific case.
+	got := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if i := strings.IndexByte(e, '='); i >= 0 {
+			got[strings.ToUpper(e[:i])] = e[i+1:]
+		}
+	}
+
+	if got["GOUX_TEST_NEW"] != "new-value" {
+		t.Errorf("GOUX_TEST_NEW = %q, want %q", got["GOUX_TEST_NEW"], "new-value")
+	}
+	if got["GOUX_TEST_INHERITED"] != "overridden-value" {
+		t.Errorf("GOUX_TEST_INHERITED = %q, want override %q, not the inherited value", got["GOUX_TEST_INHERITED"], "overridden-value")
+	}
+	if _, ok := got["SYSTEMROOT"]; !ok {
+		t.Errorf("expected inherited variable SystemRoot to survive into the merged block, entries: %v", entries)
+	}
+}
+
+// decodeEnvBlock reverses buildEnvBlock's UTF-16 double-null-terminated
+// "KEY=VALUE\0...\0\0" encoding back into a slice of "KEY=VALUE" strings,
+// for test assertions.
+func decodeEnvBlock(block *uint16) []string {
+	var u16 []uint16
+	for p := unsafe.Pointer(block); ; p = unsafe.Add(p, 2) {
+		v := *(*uint16)(p)
+		if v == 0 {
+			if len(u16) > 0 && u16[len(u16)-1] == 0 {
+				break
+			}
+			u16 = append(u16, 0)
+			continue
+		}
+		u16 = append(u16, v)
+	}
+
+	var entries []string
+	var cur []uint16
+	for _, v := range u16 {
+		if v == 0 {
+			if len(cur) > 0 {
+				entries = append(entries, string(utf16.Decode(cur)))
+			}
+			cur = nil
+			continue
+		}
+		cur = append(cur, v)
+	}
+	return entries
 }
 
 func TestPtySessionResize(t *testing.T) {
