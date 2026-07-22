@@ -182,6 +182,16 @@ func NewSession(def ShellDef) (*Session, error) {
 	registerFontListener(s, func(fs FontSettings) {
 		s.render.applyFontSettings(fs)
 		doUI(func() {
+			// s.cellW/cellH are the Session's own cached copy of the
+			// renderer's natural per-cell size (see their doc comment) —
+			// applyFontSettings just changed render.cellW/cellH (a new
+			// Size or Family), so this copy must be refreshed before
+			// Resize's gridDims call, or gridDims silently computes the
+			// column/row count from the old font's cell size while
+			// MinSize (pixelSize) already reflects the new one.
+			s.render.mu.Lock()
+			s.cellW, s.cellH = s.render.cellW, s.render.cellH
+			s.render.mu.Unlock()
 			s.Resize(s.Size())
 			s.refreshCursor()
 		})
@@ -644,6 +654,11 @@ func (s *Session) FocusGained() {
 func (s *Session) FocusLost() {
 	s.mu.Lock()
 	s.focused = false
+	// Losing focus (e.g. Alt-Tab away while Ctrl is still physically held)
+	// can happen without a matching KeyUp ever being delivered — clear
+	// ctrlHeld here too, or a later plain scroll would be misread as a
+	// Ctrl+scroll font-size change.
+	s.ctrlHeld = false
 	s.mu.Unlock()
 }
 

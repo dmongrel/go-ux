@@ -124,11 +124,26 @@ func TestSessionReactsToLiveFontSettingsChange(t *testing.T) {
 	defer sess.Close()
 
 	before := sess.render.cellH
+	beforeSessCellH := sess.cellH
 	setFontSettings(FontSettings{Family: "", Size: 24, LineHeight: 1.0, ColumnWidth: 1.0})
 
 	after := sess.render.cellH
 	if after == before {
 		t.Errorf("session's render.cellH unchanged after setFontSettings (before=%d, after=%d) — session did not react to the live font change", before, after)
+	}
+
+	// s.cellW/cellH is the Session's own cached copy of the renderer's
+	// per-cell size, used by Resize's gridDims call — it must be
+	// re-synced from render.cellH too, or gridDims silently keeps sizing
+	// the grid from the old font while MinSize already reflects the new
+	// one (a font-size change would then never actually reflow columns
+	// or rows).
+	afterSessCellH := sess.cellH
+	if afterSessCellH == beforeSessCellH {
+		t.Errorf("session's own cellH unchanged after setFontSettings (before=%d, after=%d) — Resize would still use the stale per-cell size", beforeSessCellH, afterSessCellH)
+	}
+	if afterSessCellH != after {
+		t.Errorf("session's own cellH (%d) does not match render.cellH (%d) after a live font change", afterSessCellH, after)
 	}
 }
 
