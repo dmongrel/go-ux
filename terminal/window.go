@@ -60,12 +60,13 @@ func NewWindow(app fyne.App, shells []ShellDef) (*Window, error) {
 func NewWindowFromSettings(app fyne.App, database *db.DB) (*Window, error) {
 	shells := DetectShells()
 
-	defaultShell, closeOnExit, found, err := readTerminalSettings(database)
+	defaultShell, closeOnExit, font, found, err := readTerminalSettings(database)
 	if err != nil {
 		return nil, err
 	}
 	if found {
 		shells = withDefaultFirst(shells, defaultShell)
+		setFontSettings(font)
 	}
 
 	return newWindow(app, shells, found && closeOnExit)
