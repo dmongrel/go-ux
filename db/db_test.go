@@ -3,8 +3,39 @@ package db_test
 import (
 	"testing"
 
+	"go-ux/db"
 	"go-ux/test"
 )
+
+func TestPropertyFloatRoundTrips(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Float Test", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "ratio", "Ratio", db.PropertyFloat, "1.5", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if len(props) != 1 {
+		t.Fatalf("GetProperties: got %d properties, want 1", len(props))
+	}
+	if props[0].Type != db.PropertyFloat {
+		t.Errorf("Type = %q, want %q", props[0].Type, db.PropertyFloat)
+	}
+	if props[0].Value != "1.5" {
+		t.Errorf("Value = %q, want %q", props[0].Value, "1.5")
+	}
+}
 
 func TestSettingsRegistry(t *testing.T) {
 	d, err := test.NewDB()

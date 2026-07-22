@@ -22,6 +22,7 @@ const (
 	PropertyString PropertyType = "string"
 	PropertyInt    PropertyType = "int"
 	PropertyEnum   PropertyType = "enum"
+	PropertyFloat  PropertyType = "float"
 )
 
 // Node is one entry in the settings tree.
