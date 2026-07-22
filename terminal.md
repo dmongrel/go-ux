@@ -47,7 +47,7 @@ func RegisterSettings(database *db.DB) error
 Windows — returning only the ones actually found. Callers should handle a
 partial (even empty) result gracefully; `Window`/`TabView` do.
 
-`NewSession` spawns def's shell process (via ConPTY) and returns a `Session`:
+`NewSession` spawns def's shell process (via winpty) and returns a `Session`:
 a Fyne widget rendering that shell's live VT-parsed screen grid. `OnExit`'s
 `fn` fires (via `fyne.Do`) when the shell process exits on its own — useful
 for auto-closing a tab, which `TabView` does when `close_on_exit` is set (see
@@ -125,7 +125,7 @@ win, err := terminal.NewWindow(fyneApp, terminal.DetectShells())
 ## Rendering
 
 Each `Session` wraps a `vt10x.State` (a pure-Go VT100/xterm parser, no cgo)
-fed by a background goroutine reading the shell's ConPTY output
+fed by a background goroutine reading the shell's winpty output
 (`readLoop`). The screen grid is hand-rasterized into a `canvas.Raster` each
 refresh (not per-cell/per-row Fyne widgets) using Fyne's bundled monospace
 font. Refreshes are debounced (capped at roughly 30-60Hz) rather than firing
@@ -165,16 +165,17 @@ list of what's not implemented.
 
 ## Constraints for callers
 
-- **ConPTY output is not guaranteed to arrive reliably on every Windows
-  build/machine.** ConPTY's attach-handshake bytes are reliable, but some
-  Windows builds/environments have been observed not to deliver a live
-  shell's subsequent output/echo through the pipe consistently. If a
-  `Session` opens but its grid never updates after the initial handshake,
-  that is a known ConPTY-attach limitation on the host environment, not
-  necessarily a bug in this package — this package's rendering/input layers
-  are verified against synthetic VT byte sequences fed directly into the
-  parser, independent of any single machine's ConPTY behavior, but end-to-end
-  liveness on a given machine is not something this package can guarantee.
+- **PTY backend is winpty, not the native ConPTY API.** This package bundles
+  its own copy of [winpty](https://github.com/rprichard/winpty) (MIT-licensed
+  binaries embedded via `go:embed`, extracted to a per-user cache directory
+  on first use — see `winpty_windows.go`), the same approach IntelliJ takes
+  of shipping its own PTY-hosting agent rather than depending on the host's
+  ConPTY support. That extraction step means `NewSession`'s error can now
+  also come from failing to write/load the embedded DLL (e.g. a locked-down
+  cache directory), not only from the spawn itself. This package's
+  rendering/input layers are additionally verified against synthetic VT byte
+  sequences fed directly into the parser, independent of any live PTY
+  transport.
 - **Deferred / not implemented**: cursor shape variants and contrast
   handling, hyperlink detection, mouse reporting, text selection and
   copy/paste, terminal bell, font fallback and configurable line-height,
@@ -185,7 +186,7 @@ list of what's not implemented.
 - **Desktop only — more strongly than this repo's other packages.**
   `settings`/`dialog` are untested against Fyne's mobile driver but could in
   principle run there; `terminal` cannot, even in principle: it shells out to
-  a native process via ConPTY (Windows) / a PTY (the eventual Unix
+  a native process via winpty (Windows) / a PTY (the eventual Unix
   equivalent), and no mobile OS exposes that primitive to an app. This
   package assumes native desktop Fyne (resizable window, real OS process
   spawning) unconditionally.

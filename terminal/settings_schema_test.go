@@ -129,7 +129,7 @@ func TestRegisterSettingsIsIdempotent(t *testing.T) {
 }
 
 // TestWithDefaultFirstReorders is a pure unit test over withDefaultFirst's
-// reordering logic (window.go) — no db, no Fyne, no ConPTY involved, so it
+// reordering logic (window.go) — no db, no Fyne, no PTY involved, so it
 // runs on any platform and needs no windows build tag.
 func TestWithDefaultFirstReorders(t *testing.T) {
 	a := ShellDef{Name: "a"}

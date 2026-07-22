@@ -88,8 +88,15 @@ func (t *TabView) AddTab(def ShellDef) *Session {
 		return nil
 	}
 
+	// Guarded by uiMu: an earlier tab's session is already running its own
+	// background loops by this point, and those loops touch Fyne's shared
+	// widget-render cache via doUI concurrently with this Append/SelectIndex
+	// call unless both sides serialize on the same lock (see uiMu's doc
+	// comment in widget.go).
+	uiMu.Lock()
 	t.tabs.Append(item)
 	t.tabs.SelectIndex(len(t.tabs.Items) - 1)
+	uiMu.Unlock()
 	return sess
 }
 
@@ -115,12 +122,14 @@ func (t *TabView) CloseTab(s *Session) {
 	}
 
 	_ = s.Close()
+	uiMu.Lock()
 	t.tabs.Remove(item)
+	uiMu.Unlock()
 }
 
 // closeAll terminates every open tab's session, in no particular order.
 // Used by Window on its own close so shell processes don't outlive the
-// window that spawned them (see conpty_windows.go's Close doc comment on why
+// window that spawned them (see winpty_windows.go's Close doc comment on why
 // process termination has to be explicit rather than assumed).
 func (t *TabView) closeAll() {
 	t.mu.Lock()

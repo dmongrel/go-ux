@@ -21,45 +21,32 @@ import (
 // with margin so the check spans it instead of racing it.
 const livenessWindow = 900 * time.Millisecond
 
-// TestNewPtySessionSpawnsShellAndProducesOutput proves the pseudo-console
-// pipe is live and delivers real output (Write succeeds, and Read returns
-// real bytes from the spawned shell — in practice, on this machine, ConPTY's
-// own VT mode-setting/attach handshake, not shell-generated output), and
-// that the process producing it durably outlives a real waiting window, not
-// just the instant of the read.
+// TestNewPtySessionSpawnsShellAndProducesOutput proves the winpty pipe is
+// live and delivers real output (Write succeeds, and Read returns real bytes
+// from the spawned shell), and that the process producing it durably
+// outlives a real waiting window, not just the instant of the read.
 //
 // An earlier version of this check used a 0ms WaitForSingleObject poll
 // immediately after the read. That only confirmed the process "had not yet
 // exited at this specific instant" — a check that passes exactly as easily
 // in a broken "never-attached, banner leaked to the real console" run as in
-// a working one, because on this machine the handshake bytes this test
-// observes arrive within milliseconds, well before the ~500ms mark at which
-// a never-truly-attached child self-exits here. That made the check
-// effectively vacuous on this machine: it always ran (and passed) before the
-// failure it was meant to catch had a chance to happen (found in code
-// review; see git history).
+// a working one, if output happens to arrive before a not-really-attached
+// child self-exits. That made the check effectively vacuous (found in code
+// review; see git history, from when this file backed the ConPTY
+// implementation this package has since replaced with winpty — see
+// docs/superpowers/specs/2026-07-22-terminal-winpty-backend-design.md).
 //
 // This version instead calls WaitForSingleObject with a real timeout
-// (livenessWindow, comfortably past the known ~500ms window) so the wait
-// genuinely spans the point where a not-really-attached child dies, rather
-// than sampling before it. If the process is still running when that wait
-// times out, the shell is confirmed durably alive and the test passes. If
-// the process exits during the wait — the pattern this machine's known,
-// accepted ConPTY limitation produces (see below) — the test skips with an
-// explanation instead of either silently passing (false confidence) or hard
-// failing the build on a documented, out-of-scope environment limitation.
-//
-// It also stops short of asserting that written input is echoed back
-// through the output pipe. On the machine this was developed and verified
-// on (Windows build 10.0.26200.8875), a written command's echo/output never
-// appears in the captured stream — confirmed exhaustively: cmd.exe and
-// PowerShell, byte-by-byte and bulk writes, a real interactive elevated
-// terminal (not just this test's own process), and with "Default Terminal
-// Application" explicitly set to Windows Console Host. WriteFile always
-// reports success (bytes accepted into the pipe), so this is a
-// machine/build-specific ConPTY quirk (likely covering both the missing
-// echo and the early self-exit), not a bug in conpty_windows.go, which
-// otherwise matches Microsoft's reference CreatePseudoConsole sample.
+// (livenessWindow) so the wait genuinely spans any early-self-exit window
+// rather than sampling before it. If the process is still running when that
+// wait times out, the shell is confirmed durably alive and the test passes.
+// If the process exits during the wait, the test skips with an explanation
+// instead of either silently passing (false confidence) or hard failing the
+// build on what may be a machine/build-specific PTY-attach limitation
+// (documented as a real, observed ConPTY quirk on this machine prior to the
+// winpty switch; retained here defensively in case winpty exhibits a similar
+// quirk on some environment, though it was not observed during this switch's
+// development).
 func TestNewPtySessionSpawnsShellAndProducesOutput(t *testing.T) {
 	def := ShellDef{Name: "cmd.exe", Path: os.Getenv("SystemRoot") + `\System32\cmd.exe`}
 	sess, err := newPtySession(def, 80, 24)
@@ -68,9 +55,9 @@ func TestNewPtySessionSpawnsShellAndProducesOutput(t *testing.T) {
 	}
 	defer sess.Close()
 
-	cpty, ok := sess.(*conPTYSession)
+	wpty, ok := sess.(*winPTYSession)
 	if !ok {
-		t.Fatalf("sess is %T, not *conPTYSession", sess)
+		t.Fatalf("sess is %T, not *winPTYSession", sess)
 	}
 
 	if _, err := sess.Write([]byte("echo SESSION_MARKER_98765\r\n")); err != nil {
@@ -90,19 +77,17 @@ func TestNewPtySessionSpawnsShellAndProducesOutput(t *testing.T) {
 			// discriminates "durably alive" from "not yet dead this
 			// instant". See the doc comment above for why the prior 0ms
 			// poll version didn't.
-			event, waitErr := windows.WaitForSingleObject(cpty.process, uint32(livenessWindow/time.Millisecond))
+			event, waitErr := windows.WaitForSingleObject(wpty.process, uint32(livenessWindow/time.Millisecond))
 			if waitErr != nil {
 				t.Fatalf("WaitForSingleObject: %v", waitErr)
 			}
 			if event != uint32(windows.WAIT_TIMEOUT) {
 				var exitCode uint32
-				windows.GetExitCodeProcess(cpty.process, &exitCode)
+				windows.GetExitCodeProcess(wpty.process, &exitCode)
 				t.Skipf("shell process exited (code %d) within %v of producing output %q; "+
-					"this matches the known machine-specific ConPTY attach limitation on "+
-					"this build documented in this test's doc comment (child self-exits "+
-					"around ~500ms without ever truly attaching), not a failure of this "+
-					"test itself — skipping rather than falsely passing or hard-failing "+
-					"the build on an accepted, out-of-scope environment limitation",
+					"this test's doc comment explains why an early exit here skips rather "+
+					"than fails — this may be a machine/build-specific PTY-attach "+
+					"limitation rather than a bug in this package",
 					exitCode, livenessWindow, out.String())
 			}
 
@@ -135,15 +120,12 @@ func TestPtySessionCloseIsIdempotent(t *testing.T) {
 // "/C cd" (which prints the process's current directory) from a specific
 // WorkDir and checking that directory appears in the captured output.
 //
-// Per the doc comment on TestNewPtySessionSpawnsShellAndProducesOutput
-// above, echoed command *input*/output does not reliably come back through
-// the ConPTY pipe on this machine — only the initial ConPTY handshake bytes
-// reliably arrive. This test is written for what SHOULD happen on a working
-// machine (the "cd" output containing WorkDir); if it instead only observes
-// handshake bytes and times out or fails to find WorkDir in the output,
-// that is the same known machine/build-specific ConPTY limitation, not a
-// bug in the WorkDir wiring — see the test's failure output for what was
-// actually captured.
+// This test is written for what SHOULD happen (the "cd" output containing
+// WorkDir); if it instead times out or fails to find WorkDir in the output,
+// see TestNewPtySessionSpawnsShellAndProducesOutput's doc comment for the
+// same machine/build-specific PTY-attach caveat — that would indicate that
+// limitation, not necessarily a bug in the WorkDir wiring — see the test's
+// failure output for what was actually captured.
 func TestNewPtySessionHonorsWorkDir(t *testing.T) {
 	workDir := os.Getenv("SystemRoot") // e.g. C:\Windows; always exists
 	def := ShellDef{
@@ -160,12 +142,13 @@ func TestNewPtySessionHonorsWorkDir(t *testing.T) {
 
 	out := readForDuration(t, sess, 3*time.Second)
 	if !strings.Contains(out, workDir) {
-		t.Skipf("captured output %q does not contain WorkDir %q; this machine's "+
-			"known ConPTY echo/output limitation (documented on "+
-			"TestNewPtySessionSpawnsShellAndProducesOutput) prevents this test "+
-			"from distinguishing a real WorkDir bug from that limitation, so it "+
-			"skips rather than fails — see TestBuildEnvBlock* for a deterministic, "+
-			"non-ConPTY-dependent check of the actual argument-construction logic",
+		t.Skipf("captured output %q does not contain WorkDir %q; a possible "+
+			"machine/build-specific PTY-attach limitation (see "+
+			"TestNewPtySessionSpawnsShellAndProducesOutput's doc comment) "+
+			"prevents this test from distinguishing a real WorkDir bug from "+
+			"that limitation, so it skips rather than fails — see "+
+			"TestBuildWinptyEnvBlock* for a deterministic, PTY-independent "+
+			"check of the actual argument-construction logic",
 			out, workDir)
 	}
 }
@@ -173,10 +156,9 @@ func TestNewPtySessionHonorsWorkDir(t *testing.T) {
 // TestNewPtySessionHonorsEnv proves ShellDef.Env actually reaches the
 // spawned process's environment, by spawning cmd.exe with
 // "/C echo %GOUX_TEST_VAR%" and checking the value appears in captured
-// output. See TestNewPtySessionHonorsWorkDir's doc comment: on this
-// machine, command output does not reliably come back through the pipe, so
-// a non-match here may be the same known limitation rather than a bug in
-// the Env wiring.
+// output. See TestNewPtySessionHonorsWorkDir's doc comment: a non-match here
+// may be the same possible PTY-attach limitation rather than a bug in the
+// Env wiring.
 func TestNewPtySessionHonorsEnv(t *testing.T) {
 	def := ShellDef{
 		Name: "cmd.exe",
@@ -192,12 +174,13 @@ func TestNewPtySessionHonorsEnv(t *testing.T) {
 
 	out := readForDuration(t, sess, 3*time.Second)
 	if !strings.Contains(out, "hello123") {
-		t.Skipf("captured output %q does not contain %q; this machine's "+
-			"known ConPTY echo/output limitation (documented on "+
-			"TestNewPtySessionSpawnsShellAndProducesOutput) prevents this test "+
-			"from distinguishing a real Env bug from that limitation, so it "+
-			"skips rather than fails — see TestBuildEnvBlock* for a deterministic, "+
-			"non-ConPTY-dependent check of the actual argument-construction logic",
+		t.Skipf("captured output %q does not contain %q; a possible "+
+			"machine/build-specific PTY-attach limitation (see "+
+			"TestNewPtySessionSpawnsShellAndProducesOutput's doc comment) "+
+			"prevents this test from distinguishing a real Env bug from that "+
+			"limitation, so it skips rather than fails — see "+
+			"TestBuildWinptyEnvBlock* for a deterministic, PTY-independent "+
+			"check of the actual argument-construction logic",
 			out, "hello123")
 	}
 }
@@ -249,47 +232,47 @@ func readForDuration(t *testing.T, sess ptySession, d time.Duration) string {
 	}
 }
 
-// TestBuildEnvBlockNilWhenEmpty confirms an empty/nil overrides map produces
-// a nil block, so CreateProcess is told to fully inherit the parent's
-// environment (Windows behavior for a NULL lpEnvironment) — the default
+// TestBuildWinptyEnvBlockNilWhenEmpty confirms an empty/nil overrides map
+// produces a nil block, so winpty_spawn_config_new is told NULL and the
+// spawned process fully inherits the parent's environment — the default
 // behavior for the common case where no caller sets ShellDef.Env.
-func TestBuildEnvBlockNilWhenEmpty(t *testing.T) {
-	block, err := buildEnvBlock(nil)
+func TestBuildWinptyEnvBlockNilWhenEmpty(t *testing.T) {
+	block, err := buildWinptyEnvBlock(nil)
 	if err != nil {
-		t.Fatalf("buildEnvBlock(nil): %v", err)
+		t.Fatalf("buildWinptyEnvBlock(nil): %v", err)
 	}
 	if block != nil {
-		t.Errorf("buildEnvBlock(nil) = %v, want nil", block)
+		t.Errorf("buildWinptyEnvBlock(nil) = %v, want nil", block)
 	}
 
-	block, err = buildEnvBlock(map[string]string{})
+	block, err = buildWinptyEnvBlock(map[string]string{})
 	if err != nil {
-		t.Fatalf("buildEnvBlock(empty map): %v", err)
+		t.Fatalf("buildWinptyEnvBlock(empty map): %v", err)
 	}
 	if block != nil {
-		t.Errorf("buildEnvBlock(empty map) = %v, want nil", block)
+		t.Errorf("buildWinptyEnvBlock(empty map) = %v, want nil", block)
 	}
 }
 
-// TestBuildEnvBlockMergesOverridesWithInheritedEnv proves, at the level of
-// the actual argument CreateProcess receives, that overrides both add new
-// variables and override existing inherited ones — deterministically and
-// without spawning any process, unlike TestNewPtySessionHonorsEnv above
-// (which can only observe this end-to-end through ConPTY's broken output
-// pipe on this machine). This is the test that actually exercises the
+// TestBuildWinptyEnvBlockMergesOverridesWithInheritedEnv proves, at the
+// level of the actual argument winpty_spawn_config_new receives, that
+// overrides both add new variables and override existing inherited ones —
+// deterministically and without spawning any process, unlike
+// TestNewPtySessionHonorsEnv above (which can only observe this end-to-end
+// through the live PTY pipe). This is the test that actually exercises the
 // wiring the whole-branch review flagged as silently ignored.
-func TestBuildEnvBlockMergesOverridesWithInheritedEnv(t *testing.T) {
+func TestBuildWinptyEnvBlockMergesOverridesWithInheritedEnv(t *testing.T) {
 	t.Setenv("GOUX_TEST_INHERITED", "inherited-value")
 
-	block, err := buildEnvBlock(map[string]string{
+	block, err := buildWinptyEnvBlock(map[string]string{
 		"GOUX_TEST_NEW":       "new-value",
 		"GOUX_TEST_INHERITED": "overridden-value",
 	})
 	if err != nil {
-		t.Fatalf("buildEnvBlock: %v", err)
+		t.Fatalf("buildWinptyEnvBlock: %v", err)
 	}
 	if block == nil {
-		t.Fatal("buildEnvBlock returned nil block for non-empty overrides")
+		t.Fatal("buildWinptyEnvBlock returned nil block for non-empty overrides")
 	}
 
 	entries := decodeEnvBlock(block)

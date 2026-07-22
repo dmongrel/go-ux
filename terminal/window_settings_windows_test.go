@@ -14,7 +14,7 @@ import (
 
 // exitingCmdDef is a cmd.exe shell configured to exit immediately on its
 // own, for exercising close-on-exit wiring without needing to drive real
-// interactive input through ConPTY (unreliable on this machine — see the
+// interactive input through PTY (unreliable on this machine — see the
 // plan's Global Constraints).
 func exitingCmdDef(name string) ShellDef {
 	return ShellDef{
@@ -45,12 +45,18 @@ func TestTabViewCloseOnExitAutoRemovesTab(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(tv.tabs.Items) == 0 {
+		// uiMu: reading tabs.Items races with CloseTab's own uiMu-guarded
+		// write (see uiMu's doc comment in widget.go) unless this poll
+		// takes the same lock.
+		uiMu.Lock()
+		empty := len(tv.tabs.Items) == 0
+		uiMu.Unlock()
+		if empty {
 			return // tab auto-closed once the shell exited
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Skip("tab did not auto-close within timeout; on this machine ConPTY " +
+	t.Skip("tab did not auto-close within timeout; on this machine PTY " +
 		"process-exit delivery is unreliable (see Global Constraints) — " +
 		"skipping rather than failing on a documented environment limitation")
 }
@@ -91,7 +97,9 @@ func TestNewWindowFromSettingsOrdersDefaultShellFromRegistry(t *testing.T) {
 	}
 	defer func() {
 		w.tv.closeAll()
+		uiMu.Lock()
 		w.win.Close()
+		uiMu.Unlock()
 	}()
 
 	if !w.tv.hasDefault {
@@ -124,7 +132,9 @@ func TestNewWindowFromSettingsFallsBackWithoutRegistration(t *testing.T) {
 	}
 	defer func() {
 		w.tv.closeAll()
+		uiMu.Lock()
 		w.win.Close()
+		uiMu.Unlock()
 	}()
 
 	if w.tv.closeOnExit {

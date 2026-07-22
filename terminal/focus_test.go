@@ -10,8 +10,8 @@ import (
 )
 
 // fakePTY is a minimal ptySession double that records everything written to
-// it. It needs no real process or ConPTY handle, so these tests are
-// deterministic and unaffected by this machine's documented ConPTY
+// it. It needs no real process or PTY handle, so these tests are
+// deterministic and unaffected by this machine's documented PTY
 // limitation (see Global Constraints) — they check what Session *wrote*, not
 // anything read back from a live shell.
 type fakePTY struct {
@@ -28,7 +28,7 @@ func (f *fakePTY) Close() error             { return nil }
 func (f *fakePTY) Wait() error              { return nil }
 
 // newTestSession builds a Session wired to a fakePTY, bypassing NewSession's
-// real ConPTY spawn entirely (no OS process, unaffected by ConPTY
+// real PTY spawn entirely (no OS process, unaffected by PTY
 // limitations). It otherwise mirrors NewSession's construction so
 // CreateRenderer/Refresh/Tapped-driven canvas focusing work exactly as they
 // would on a real Session — keyboard-input handling itself only ever

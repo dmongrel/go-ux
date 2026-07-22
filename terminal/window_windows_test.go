@@ -12,7 +12,7 @@ import (
 // TestNewWindowWithNoShellsBuildsEmptyUsableWindow confirms NewWindow doesn't
 // require a non-empty shells list to construct successfully (no spawn is
 // attempted, so this needs no real process and runs regardless of this
-// machine's ConPTY limitations).
+// machine's PTY limitations).
 func TestNewWindowWithNoShellsBuildsEmptyUsableWindow(t *testing.T) {
 	a := test.NewApp()
 
@@ -24,7 +24,9 @@ func TestNewWindowWithNoShellsBuildsEmptyUsableWindow(t *testing.T) {
 		t.Errorf("len(tv.tabs.Items) = %d, want 0", len(w.tv.tabs.Items))
 	}
 	w.Show()
+	uiMu.Lock()
 	w.win.Close()
+	uiMu.Unlock()
 }
 
 // TestWindowSetSizeIsChainableAndGuarded mirrors dialog.Dialog.SetSize's and
@@ -37,7 +39,11 @@ func TestWindowSetSizeIsChainableAndGuarded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWindow: %v", err)
 	}
-	defer w.win.Close()
+	defer func() {
+		uiMu.Lock()
+		w.win.Close()
+		uiMu.Unlock()
+	}()
 
 	if got := w.SetSize(640, 480); got != w {
 		t.Error("SetSize did not return the same *Window (not chainable)")
@@ -71,7 +77,9 @@ func TestNewWindowContentIsTabViewWidget(t *testing.T) {
 	}
 	defer func() {
 		w.tv.closeAll()
+		uiMu.Lock()
 		w.win.Close()
+		uiMu.Unlock()
 	}()
 
 	if got := w.win.Content(); got != fyne.CanvasObject(w.tv.tabs) {

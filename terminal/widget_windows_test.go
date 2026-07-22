@@ -14,7 +14,7 @@ import (
 // (against cmd.exe), builds its widget renderer without panicking, and closes
 // cleanly. It uses fyne/test's headless app so CreateRenderer/Refresh run
 // through a real (offscreen) canvas. It does NOT assert on rendered pixels or
-// on live shell output — this machine's ConPTY does not reliably deliver a
+// on live shell output — this machine's PTY does not reliably deliver a
 // shell's output (see Global Constraints), and pixel correctness needs a
 // human at a GUI. What it proves is the wiring: construct, render, refresh,
 // resize, close, all crash-free.
@@ -68,7 +68,7 @@ func TestSessionOnExitFiresAfterClose(t *testing.T) {
 	case <-fired:
 		// exit delivered
 	case <-time.After(5 * time.Second):
-		t.Skip("OnExit did not fire within timeout; on this machine ConPTY " +
+		t.Skip("OnExit did not fire within timeout; on this machine PTY " +
 			"process lifecycle is unreliable (see Global Constraints) — " +
 			"skipping rather than failing on a documented environment limitation")
 	}

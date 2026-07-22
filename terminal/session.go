@@ -1,9 +1,11 @@
 package terminal
 
 // ptySession is one running shell process attached to a pseudo-console. The
-// Windows implementation lives in conpty_windows.go; a future unix
-// implementation would provide the same interface over a standard PTY,
-// letting everything above this layer stay platform-agnostic.
+// Windows implementation lives in winpty_windows.go (backed by winpty, not
+// the native ConPTY API — see docs/superpowers/specs/
+// 2026-07-22-terminal-winpty-backend-design.md); a future unix implementation
+// would provide the same interface over a standard PTY, letting everything
+// above this layer stay platform-agnostic.
 //
 // Reading and writing are both synchronous here — the background read-loop
 // goroutine and its fyne.Do-wrapped widget updates belong to the rendering

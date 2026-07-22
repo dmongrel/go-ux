@@ -69,6 +69,21 @@ type Session struct {
 	// (in Resize), so it needs no lock.
 	cols, rows int
 
+	// ptyResized becomes true once Resize has propagated a size to the PTY
+	// at least once. cols/rows start out equal to defaultCols/defaultRows
+	// (a placeholder, not a confirmed size), and the widget's real first
+	// layout pass can easily compute that exact same grid size — without
+	// ptyResized, Resize's own no-op-on-unchanged-size optimization would
+	// then skip calling pty.Resize entirely, so winpty_set_size is never
+	// called. Observed effect: PowerShell's console host never renders its
+	// prompt until something (e.g. the user resizing the window) finally
+	// changes the grid size and triggers a real winpty_set_size call — it
+	// appears to need that signal before it will draw at all, even though
+	// cmd.exe and Git Bash eventually render without it. Forcing the first
+	// Resize call through unconditionally avoids relying on the placeholder
+	// happening to differ from the real size.
+	ptyResized bool
+
 	// refreshReq is the debounce channel: readLoop does a non-blocking send
 	// to mark the grid dirty; the refresh loop drains it at refreshInterval.
 	// Buffered depth 1 is all that's needed — many reads collapse into one
@@ -76,6 +91,20 @@ type Session struct {
 	refreshReq chan struct{}
 	done       chan struct{}
 	closeOnce  sync.Once
+	closeErr   error
+
+	// wg tracks readLoop, refreshLoop, and blinkLoop only — not waitLoop.
+	// Those three are all bounded by s.done closing and the PTY pipes
+	// closing (both driven directly by Close, deterministically fast), so
+	// Close can safely wait for them. waitLoop is bounded by the shell
+	// process actually terminating (WaitForSingleObject), which this
+	// package's own tests already document as unreliable on some machines
+	// (see the close_on_exit test's skip message) — Close waiting on that
+	// too would turn pre-existing OS-level flakiness into an indefinite
+	// hang. uiMu (see doUI) already makes it race-free for waitLoop's exit
+	// callback to touch widgets whenever it eventually runs, so there's no
+	// correctness reason to block Close on it too.
+	wg sync.WaitGroup
 
 	mu       sync.Mutex // guards onExit, blinkOn, and focused
 	onExit   func()
@@ -120,6 +149,7 @@ func NewSession(def ShellDef) (*Session, error) {
 	s.cursor = canvas.NewRectangle(color.RGBA{0xd0, 0xd0, 0xd0, 0xff})
 	s.ExtendBaseWidget(s)
 
+	s.wg.Add(3)
 	go s.readLoop()
 	go s.refreshLoop()
 	go s.blinkLoop()
@@ -128,12 +158,40 @@ func NewSession(def ShellDef) (*Session, error) {
 	return s, nil
 }
 
+// uiMu serializes every touch this package makes to Fyne CanvasObjects,
+// whether dispatched via fyne.Do from a background goroutine (doUI below) or
+// made directly by code documented as running on the UI goroutine (TabView's
+// exported methods, Window's constructors). A real Fyne driver already
+// provides this serialization itself, by running every fyne.Do closure on one
+// dedicated UI goroutine — but fyne.io/fyne/v2/test's driver does not: its
+// DoFromGoroutine runs the closure synchronously, in whatever goroutine calls
+// it (see test/driver.go). Without uiMu, that lets a Session's background
+// loops race directly against a test's own construction/teardown code on
+// Fyne's shared internal widget-render cache, which showed up as sporadic
+// STATUS_HEAP_CORRUPTION under `go test` despite being invisible without
+// -race. uiMu costs nothing extra in production (the real driver's own
+// serialization means it's never contended there) and fixes the test-only
+// race directly.
+var uiMu sync.Mutex
+
+// doUI runs f on the UI goroutine (via fyne.Do), holding uiMu for the
+// duration. Use this instead of a bare fyne.Do call anywhere a background
+// goroutine needs to touch a CanvasObject.
+func doUI(f func()) {
+	fyne.Do(func() {
+		uiMu.Lock()
+		defer uiMu.Unlock()
+		f()
+	})
+}
+
 // readLoop runs on a BACKGROUND goroutine (never the Fyne UI goroutine). It
 // blocking-reads PTY output and feeds it to the VT parser, which is a plain
 // data structure, not a CanvasObject — so no fyne.Do is needed here. It only
 // *marks* the grid dirty (a non-blocking send); the actual CanvasObject touch
 // happens on the UI goroutine in refreshLoop.
 func (s *Session) readLoop() {
+	defer s.wg.Done()
 	buf := make([]byte, 4096)
 	for {
 		n, err := s.pty.Read(buf)
@@ -168,6 +226,7 @@ func (s *Session) markDirty() {
 // refreshInterval and repaints only when a dirty mark is pending, capping
 // redraw frequency regardless of how fast PTY output arrives.
 func (s *Session) refreshLoop() {
+	defer s.wg.Done()
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 	for {
@@ -178,7 +237,7 @@ func (s *Session) refreshLoop() {
 			select {
 			case <-s.refreshReq:
 				// Cross onto the UI goroutine before touching the widget.
-				fyne.Do(s.Refresh)
+				doUI(s.Refresh)
 			default:
 			}
 		}
@@ -190,6 +249,7 @@ func (s *Session) refreshLoop() {
 // rectangle. The blink is intentionally independent of PTY output so the
 // cursor keeps blinking on an idle prompt.
 func (s *Session) blinkLoop() {
+	defer s.wg.Done()
 	ticker := time.NewTicker(cursorBlinkInterval)
 	defer ticker.Stop()
 	for {
@@ -200,7 +260,7 @@ func (s *Session) blinkLoop() {
 			s.mu.Lock()
 			s.blinkOn = !s.blinkOn
 			s.mu.Unlock()
-			fyne.Do(s.refreshCursor)
+			doUI(s.refreshCursor)
 		}
 	}
 }
@@ -210,6 +270,9 @@ func (s *Session) blinkLoop() {
 // callback is invoked on the UI goroutine (fyne.Do), since a host app's exit
 // handler will typically touch UI (close a tab, show a message).
 func (s *Session) waitLoop() {
+	// Deliberately not tracked by s.wg — see wg's doc comment above: this
+	// goroutine's own exit is gated on the shell process actually
+	// terminating, which Close cannot assume happens promptly.
 	_ = s.pty.Wait()
 
 	s.mu.Lock()
@@ -218,6 +281,14 @@ func (s *Session) waitLoop() {
 	s.mu.Unlock()
 
 	if fn != nil {
+		// Deliberately plain fyne.Do, not doUI: fn (TabView's closeOnExit
+		// callback) calls CloseTab, which calls Close, which can block in
+		// wg.Wait() for this same Session's refreshLoop/blinkLoop to finish.
+		// Those loops reach their own exit only after acquiring uiMu via
+		// their own doUI call — so holding uiMu across all of fn, as doUI
+		// would, deadlocks fn's Close call against its own siblings. Fyne
+		// widget touches fn makes (e.g. CloseTab's tabs.Remove) already take
+		// uiMu themselves, narrowly, only around the touch itself.
 		fyne.Do(fn)
 	}
 }
@@ -233,7 +304,7 @@ func (s *Session) OnExit(fn func()) {
 	s.mu.Unlock()
 
 	if already && fn != nil {
-		fyne.Do(fn)
+		fyne.Do(fn) // see waitLoop's matching call for why not doUI
 	}
 }
 
@@ -248,15 +319,23 @@ func (s *Session) Title() string {
 }
 
 // Close terminates the session: stops the background goroutines and kills the
-// shell process. Safe to call more than once. It does not itself run on any
-// particular goroutine.
+// shell process. Safe to call more than once (every call blocks until
+// readLoop/refreshLoop/blinkLoop have actually exited and returns the same
+// error). It does not itself run on any particular goroutine.
+//
+// Close deliberately does not wait for waitLoop too — see s.wg's doc comment
+// for why. readLoop/refreshLoop/blinkLoop are worth waiting for: without it,
+// a caller that tears down the widget tree right after Close (TabView's
+// closeAll, Window's close intercept) would have a window where a straggler
+// goroutine is still about to call fyne.Do, racing that teardown on Fyne's
+// shared widget-render cache (see uiMu's doc comment above).
 func (s *Session) Close() error {
-	var err error
 	s.closeOnce.Do(func() {
 		close(s.done)
-		err = s.pty.Close()
+		s.closeErr = s.pty.Close()
 	})
-	return err
+	s.wg.Wait()
+	return s.closeErr
 }
 
 // Resize recomputes the grid dimensions from the new widget size and drives
@@ -268,12 +347,25 @@ func (s *Session) Resize(size fyne.Size) {
 	s.BaseWidget.Resize(size)
 
 	cols, rows := gridDims(int(size.Width), int(size.Height), s.cellW, s.cellH)
-	if cols == s.cols && rows == s.rows {
+	if cols == s.cols && rows == s.rows && s.ptyResized {
 		return
 	}
 	s.cols, s.rows = cols, rows
-	_ = s.pty.Resize(cols, rows) // PTY leg
-	s.render.resize(cols, rows)  // VT + raster legs (render.resize does both)
+	s.ptyResized = true
+
+	// Skip the PTY leg once the shell has already exited: winpty_set_size
+	// (winpty_windows.go's Resize) can block for a long time — observed as
+	// an effectively indefinite hang — when called against a winpty_t whose
+	// child process is already gone, which a layout pass right after a
+	// closeOnExit auto-close can easily trigger. The VT/raster legs still
+	// need to track the widget's new size regardless.
+	s.mu.Lock()
+	exited := s.exitDone
+	s.mu.Unlock()
+	if !exited {
+		_ = s.pty.Resize(cols, rows) // PTY leg
+	}
+	s.render.resize(cols, rows) // VT + raster legs (render.resize does both)
 	s.refreshCursor()
 }
 

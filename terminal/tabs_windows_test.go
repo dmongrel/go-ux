@@ -24,8 +24,8 @@ func cmdDef(name string) ShellDef {
 }
 
 // dupProcessHandle returns the caller's own duplicate of process, independent
-// of the session's original handle. conPTYSession.Close (see
-// conpty_windows.go) both TerminateProcess's AND CloseHandle's its own
+// of the session's original handle. winPTYSession.Close (see
+// winpty_windows.go) both TerminateProcess's AND CloseHandle's its own
 // process handle, so waiting on that original handle after Close returns
 // fails with "the handle is invalid" rather than reporting signaled — that's
 // an artifact of the handle being closed, not evidence about whether the
@@ -119,7 +119,7 @@ func TestCreateTabUsesDefaultShell(t *testing.T) {
 // signaled state (WAIT_OBJECT_0) specifically, which only happens once the
 // process has actually died — CloseTab calls Session.Close synchronously
 // before returning, and Session.Close calls ptySession.Close, which
-// TerminateProcess's the child (see conpty_windows.go), so the process
+// TerminateProcess's the child (see winpty_windows.go), so the process
 // should already be gone (or dying) by the time this wait even starts.
 func TestCloseTabTerminatesProcess(t *testing.T) {
 	test.NewApp()
@@ -128,11 +128,11 @@ func TestCloseTabTerminatesProcess(t *testing.T) {
 	defer tv.closeAll()
 
 	target := tv.byItem[tv.tabs.Items[0]]
-	cpty, ok := target.pty.(*conPTYSession)
+	wpty, ok := target.pty.(*winPTYSession)
 	if !ok {
-		t.Fatalf("target.pty is %T, not *conPTYSession", target.pty)
+		t.Fatalf("target.pty is %T, not *winPTYSession", target.pty)
 	}
-	process := dupProcessHandle(t, cpty.process)
+	process := dupProcessHandle(t, wpty.process)
 
 	tv.CloseTab(target)
 
@@ -190,8 +190,19 @@ func TestCloseLastTabLeavesEmptyTabViewWithoutPanic(t *testing.T) {
 	sess := tv.byItem[tv.tabs.Items[0]]
 
 	win := a.NewWindow("")
+	// uiMu: this test builds its own window and touches tv.tabs directly
+	// (bypassing window.go's own uiMu-guarded newWindow), while "cmd-1"'s
+	// session already has background loops running — see uiMu's doc
+	// comment in widget.go for why that touch needs the same lock those
+	// loops take.
+	uiMu.Lock()
 	win.SetContent(tv.tabs)
-	defer win.Close()
+	uiMu.Unlock()
+	defer func() {
+		uiMu.Lock()
+		win.Close()
+		uiMu.Unlock()
+	}()
 
 	tv.CloseTab(sess)
 
@@ -226,11 +237,11 @@ func TestUserClosedTabViaOnClosedTerminatesProcess(t *testing.T) {
 
 	item := tv.tabs.Items[0]
 	sess := tv.byItem[item]
-	cpty, ok := sess.pty.(*conPTYSession)
+	wpty, ok := sess.pty.(*winPTYSession)
 	if !ok {
-		t.Fatalf("sess.pty is %T, not *conPTYSession", sess.pty)
+		t.Fatalf("sess.pty is %T, not *winPTYSession", sess.pty)
 	}
-	process := dupProcessHandle(t, cpty.process)
+	process := dupProcessHandle(t, wpty.process)
 
 	// Mirror what DocTabs.close does when CloseIntercept is nil (verified in
 	// the vendored source, doctabs.go): remove the item, then fire OnClosed.

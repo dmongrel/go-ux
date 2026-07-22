@@ -100,8 +100,14 @@ func newWindow(app fyne.App, shells []ShellDef, closeOnExit bool) (*Window, erro
 	tv := newTabView(shells, closeOnExit)
 
 	win := app.NewWindow("Terminal")
+	// Guarded by uiMu: by the time newTabView returns, any tabs it created
+	// already have background loops running (see uiMu's doc comment in
+	// widget.go), which would otherwise race these calls on Fyne's shared
+	// widget-render cache.
+	uiMu.Lock()
 	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))
 	win.SetContent(tv.tabs)
+	uiMu.Unlock()
 
 	win.SetCloseIntercept(func() {
 		tv.closeAll()
@@ -117,7 +123,9 @@ func newWindow(app fyne.App, shells []ShellDef, closeOnExit bool) (*Window, erro
 // settings.Window.SetSize.
 func (w *Window) SetSize(width, height float32) *Window {
 	if width > 0 && height > 0 {
+		uiMu.Lock()
 		w.win.Resize(fyne.NewSize(width, height))
+		uiMu.Unlock()
 	}
 	return w
 }
@@ -126,5 +134,7 @@ func (w *Window) SetSize(width, height float32) *Window {
 // Show — unlike go-ux/dialog's Show, which blocks the calling goroutine
 // until the dialog closes.
 func (w *Window) Show() {
+	uiMu.Lock()
 	w.win.Show()
+	uiMu.Unlock()
 }

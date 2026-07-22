@@ -8,8 +8,8 @@ import (
 
 // TestVTStateParsesPlainTextIntoCells is the core grid-state proof the task
 // requires: bytes fed to the parser land as the expected runes at the
-// expected cell positions. It bypasses ConPTY entirely (feeding bytes
-// straight into vtState) because this machine's ConPTY does not reliably
+// expected cell positions. It bypasses PTY entirely (feeding bytes
+// straight into vtState) because this machine's PTY does not reliably
 // deliver a live shell's output — see Global Constraints in the plan — and
 // because parser correctness has nothing to do with the PTY transport
 // anyway.
