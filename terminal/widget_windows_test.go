@@ -4,9 +4,12 @@ package terminal
 
 import (
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/test"
 )
 
@@ -126,5 +129,92 @@ func TestSessionReactsToLiveFontSettingsChange(t *testing.T) {
 	after := sess.render.cellH
 	if after == before {
 		t.Errorf("session's render.cellH unchanged after setFontSettings (before=%d, after=%d) — session did not react to the live font change", before, after)
+	}
+}
+
+func TestCtrlScrollAdjustsFontSizeLiveAndClamps(t *testing.T) {
+	test.NewApp()
+	defer setFontSettings(defaultFontSettings) // restore for other tests
+
+	sess, err := NewSession(cmdDef("ctrl-scroll-test"))
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close()
+
+	sess.KeyDown(&fyne.KeyEvent{Name: desktop.KeyControlLeft})
+	sess.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // scroll "up" = larger
+
+	got := currentFontSettings().Size
+	want := defaultFontSettings.Size + fontSizeScrollStep
+	if got != want {
+		t.Errorf("font size after one Ctrl+scroll-up tick = %d, want %d", got, want)
+	}
+
+	// Clamp: many ticks shouldn't exceed maxFontSize.
+	for i := 0; i < 30; i++ {
+		sess.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}})
+	}
+	if got := currentFontSettings().Size; got != maxFontSize {
+		t.Errorf("font size after many Ctrl+scroll-up ticks = %d, want %d (clamped)", got, maxFontSize)
+	}
+
+	sess.KeyUp(&fyne.KeyEvent{Name: desktop.KeyControlLeft})
+	before := currentFontSettings().Size
+	sess.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}}) // Ctrl no longer held: no-op
+	if got := currentFontSettings().Size; got != before {
+		t.Errorf("font size changed on a scroll without Ctrl held: %d -> %d, want unchanged", before, got)
+	}
+}
+
+func TestCtrlScrollDebouncedSavePersistsAfterIdle(t *testing.T) {
+	test.NewApp()
+	defer setFontSettings(defaultFontSettings)
+	defer setActiveFontDB(nil)
+
+	d := newTestDB(t)
+	if err := RegisterSettings(d); err != nil {
+		t.Fatalf("RegisterSettings: %v", err)
+	}
+	setActiveFontDB(d)
+
+	sess, err := NewSession(cmdDef("debounce-test"))
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close()
+
+	sess.KeyDown(&fyne.KeyEvent{Name: desktop.KeyControlLeft})
+	for i := 0; i < 3; i++ {
+		sess.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}})
+	}
+
+	nodes, _ := d.ListSettings()
+	node, _ := findRootNode(nodes, terminalSettingsLabel)
+	props, _ := d.GetProperties(node.ID)
+	for _, p := range props {
+		if p.Key == KeyFontSize && p.Value != "13" {
+			t.Fatal("font_size written to db before the debounce period elapsed")
+		}
+	}
+
+	time.Sleep(fontSizeSaveDebounce + 100*time.Millisecond)
+
+	props, err = d.GetProperties(node.ID)
+	if err != nil {
+		t.Fatalf("GetProperties (after debounce): %v", err)
+	}
+	want := strconv.Itoa(13 + 3*fontSizeScrollStep)
+	found := false
+	for _, p := range props {
+		if p.Key == KeyFontSize {
+			found = true
+			if p.Value != want {
+				t.Errorf("font_size in db = %q, want %q", p.Value, want)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("font_size property not found")
 	}
 }

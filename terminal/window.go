@@ -68,6 +68,7 @@ func NewWindowFromSettings(app fyne.App, database *db.DB) (*Window, error) {
 		shells = withDefaultFirst(shells, defaultShell)
 		setFontSettings(font)
 	}
+	setActiveFontDB(database)
 
 	return newWindow(app, shells, found && closeOnExit)
 }

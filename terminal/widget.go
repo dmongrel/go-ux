@@ -2,12 +2,16 @@ package terminal
 
 import (
 	"image/color"
+	"strconv"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
+
+	"go-ux/db"
 )
 
 // Default grid dimensions a session starts at before the widget is laid out
@@ -38,6 +42,13 @@ const (
 
 	// cursorBlinkInterval is the on/off half-period of the block cursor.
 	cursorBlinkInterval = 530 * time.Millisecond
+
+	// fontSizeScrollStep/fontSizeSaveDebounce drive Ctrl+scroll's live font-
+	// size adjustment (KeyDown/KeyUp/Scrolled below): 2pt per wheel tick,
+	// and a live-typing-speed idle period before persisting to the db, so a
+	// fast scroll doesn't write to SQLite dozens of times a second.
+	fontSizeScrollStep   = 2
+	fontSizeSaveDebounce = 400 * time.Millisecond
 )
 
 // Session is the embeddable terminal widget: one shell process attached to a
@@ -114,10 +125,15 @@ type Session struct {
 	// correctness reason to block Close on it too.
 	wg sync.WaitGroup
 
-	mu       sync.Mutex // guards onExit, blinkOn, and focused
+	mu       sync.Mutex // guards onExit, blinkOn, focused, and ctrlHeld
 	onExit   func()
 	exitDone bool
 	blinkOn  bool
+
+	// ctrlHeld tracks whether Ctrl is currently held down, per KeyDown/KeyUp
+	// (desktop.Keyable) below — used by Scrolled to distinguish a plain
+	// scroll from a Ctrl+scroll font-size adjustment.
+	ctrlHeld bool
 
 	// focused tracks Focusable's gained/lost lifecycle. Nothing in this task
 	// visually depends on it yet (that's the Phase 8 cursor-contrast work,
@@ -198,6 +214,67 @@ func doUI(f func()) {
 		uiMu.Lock()
 		defer uiMu.Unlock()
 		f()
+	})
+}
+
+// activeFontDB is the db Ctrl+scroll's debounced save writes font_size to —
+// nil means "no persistence", the same as if no db were involved in the
+// first place (NewWindow-only callers). Set by setActiveFontDB, called
+// from NewWindowFromSettings (window.go) — the only terminal constructor
+// that has a *db.DB to begin with.
+var (
+	activeFontDBMu sync.Mutex
+	activeFontDB   *db.DB
+
+	fontSizeSaveTimerMu sync.Mutex
+	fontSizeSaveTimer   *time.Timer
+)
+
+// setActiveFontDB records database as the target for Ctrl+scroll's
+// debounced font-size persistence. Called once per NewWindowFromSettings
+// call; the most recent call wins if more than one Window is open against
+// different databases.
+func setActiveFontDB(database *db.DB) {
+	activeFontDBMu.Lock()
+	activeFontDB = database
+	activeFontDBMu.Unlock()
+}
+
+// scheduleFontSizeSave (re)starts a fontSizeSaveDebounce timer that writes
+// the current shared FontSettings.Size to activeFontDB (if one is set) once
+// it fires — repeated calls before it fires (a fast scroll) just push the
+// deadline back, so a burst of scroll ticks produces one write, not one per
+// tick.
+func scheduleFontSizeSave() {
+	fontSizeSaveTimerMu.Lock()
+	defer fontSizeSaveTimerMu.Unlock()
+
+	if fontSizeSaveTimer != nil {
+		fontSizeSaveTimer.Stop()
+	}
+	fontSizeSaveTimer = time.AfterFunc(fontSizeSaveDebounce, saveFontSizeNow)
+}
+
+func saveFontSizeNow() {
+	activeFontDBMu.Lock()
+	database := activeFontDB
+	activeFontDBMu.Unlock()
+	if database == nil {
+		return
+	}
+
+	nodes, err := database.ListSettings()
+	if err != nil {
+		return
+	}
+	node, ok := findRootNode(nodes, terminalSettingsLabel)
+	if !ok {
+		return
+	}
+
+	size := currentFontSettings().Size
+	_ = database.SaveProperties(node.ID, map[string]string{
+		KeyFontSize: strconv.Itoa(size),
 	})
 }
 
@@ -505,6 +582,52 @@ func (s *Session) TypedShortcut(sh fyne.Shortcut) {
 	if data, ok := ctrlKeyBytes(ks.Key()); ok {
 		_, _ = s.pty.Write(data)
 	}
+}
+
+// KeyDown/KeyUp track Ctrl's held state (desktop.Keyable) — used only by
+// Scrolled, below, to distinguish a plain scroll (a no-op today: this
+// package has no scrollback/mouse-reporting yet) from a Ctrl+scroll
+// (adjusts font size). fyne.ScrollEvent itself carries no modifier-key
+// information, so this is the only way to know whether Ctrl was held
+// during a given scroll.
+func (s *Session) KeyDown(ev *fyne.KeyEvent) {
+	if ev.Name == desktop.KeyControlLeft || ev.Name == desktop.KeyControlRight {
+		s.mu.Lock()
+		s.ctrlHeld = true
+		s.mu.Unlock()
+	}
+}
+
+func (s *Session) KeyUp(ev *fyne.KeyEvent) {
+	if ev.Name == desktop.KeyControlLeft || ev.Name == desktop.KeyControlRight {
+		s.mu.Lock()
+		s.ctrlHeld = false
+		s.mu.Unlock()
+	}
+}
+
+// Scrolled (fyne.Scrollable) adjusts the live shared font size when Ctrl is
+// held (see KeyDown/KeyUp) — one fontSizeScrollStep per wheel tick, clamped
+// to [minFontSize, maxFontSize] by setFontSettings itself. Without Ctrl
+// held, this is a no-op: this package has no scrollback/mouse-reporting
+// yet.
+func (s *Session) Scrolled(ev *fyne.ScrollEvent) {
+	s.mu.Lock()
+	held := s.ctrlHeld
+	s.mu.Unlock()
+	if !held {
+		return
+	}
+
+	current := currentFontSettings()
+	delta := fontSizeScrollStep
+	if ev.Scrolled.DY < 0 {
+		delta = -delta
+	}
+	current.Size += delta
+	setFontSettings(current)
+
+	scheduleFontSizeSave()
 }
 
 // FocusGained is called when the terminal receives keyboard focus
