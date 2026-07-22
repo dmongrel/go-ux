@@ -50,62 +50,87 @@ type gridRenderer struct {
 }
 
 // newGridRenderer builds a renderer over state, loading the monospace font
-// face used to draw glyphs. The raster's generator hands back the cached
-// image; because the generator is called on the Fyne UI goroutine while
-// refresh() may run there too, both take the same mutex.
+// face used to draw glyphs. The raster's generator (paint) does the actual
+// per-frame rasterization; because it's called on the Fyne UI goroutine
+// while resize()/refresh() may run there too, all three take the same
+// mutex.
 func newGridRenderer(state *vtState) *gridRenderer {
 	r := &gridRenderer{state: state}
 	r.face, r.cellW, r.cellH, r.ascent = loadMonospaceFace(float64(defaultCellHeight))
 
-	r.raster = canvas.NewRaster(func(w, h int) image.Image {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.img == nil {
-			// Refresh hasn't run yet; hand back a 1x1 transparent image
-			// rather than nil so canvas.Raster never panics on first paint.
-			return image.NewRGBA(image.Rect(0, 0, 1, 1))
-		}
-		return r.img
-	})
-	// Nearest-neighbor keeps the hand-rasterized glyphs crisp when Fyne
-	// scales the raster to the widget's pixel size instead of blurring them.
+	r.raster = canvas.NewRaster(r.paint)
+	// Nearest-neighbor keeps the hand-rasterized glyphs crisp rather than
+	// blurring them — paint (below) now already renders at the exact (w, h)
+	// Fyne requests, so this no longer does any real scaling in the common
+	// case; it only matters for the rare frame where the generator is asked
+	// to redraw before Fyne has caught up to a just-applied resize.
 	r.raster.ScaleMode = canvas.ImageScalePixels
-	r.refresh()
 	return r
 }
 
-// refresh repaints the whole grid into the cached image from a fresh
-// snapshot. It is safe to call from the UI goroutine (and must be called
-// there once the raster is on-screen, per Fyne's threading model); it takes
-// no Fyne locks itself beyond guarding its own image buffer.
-func (r *gridRenderer) refresh() {
+// paint is canvas.Raster's Generator callback: Fyne calls it with the
+// widget's actual current on-screen pixel size and uses the returned image
+// directly. NewRaster's own doc comment says as much — "Images returned
+// from this method should draw dynamically to fill the width and height
+// parameters passed" — but this used to ignore w/h entirely and always
+// rasterize at a fixed "natural" size (cols*cellW x rows*cellH, from font
+// metrics alone). Whenever that natural size didn't exactly match what Fyne
+// actually wanted — any device scale factor other than 1, or simply a
+// layout giving the widget more room than its MinSize — Fyne had to
+// nearest-neighbor-scale the mismatched image to fit, which is what
+// produced visibly inconsistent per-row pixel heights ("some lines render
+// at 2px where they should be 1px"): a non-integer scale ratio rounds
+// differently row to row. Rendering directly at the requested (w, h), with
+// per-cell boxes sized proportionally by float division rather than the
+// fixed integer cellW/cellH, removes that second scaling step entirely —
+// any remaining natural-vs-actual mismatch (usually at most a fraction of
+// one cell, from gridDims' own floor division) now shows up as a small,
+// uniform effect from one consistent calculation, not per-row noise from
+// an unrelated general-purpose image-scaling algorithm.
+func (r *gridRenderer) paint(w, h int) image.Image {
 	snap := r.state.snapshot()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	wantW := max(1, snap.Cols*r.cellW)
-	wantH := max(1, snap.Rows*r.cellH)
-	if r.img == nil || r.img.Rect.Dx() != wantW || r.img.Rect.Dy() != wantH {
-		r.img = image.NewRGBA(image.Rect(0, 0, wantW, wantH))
+	w, h = max(w, 1), max(h, 1)
+	if r.img == nil || r.img.Rect.Dx() != w || r.img.Rect.Dy() != h {
+		r.img = image.NewRGBA(image.Rect(0, 0, w, h))
 	}
+
+	cols, rows := max(snap.Cols, 1), max(snap.Rows, 1)
+	cellW := float64(w) / float64(cols)
+	cellH := float64(h) / float64(rows)
 
 	drawer := &xfont.Drawer{Dst: r.img, Face: r.face}
 	for y := 0; y < snap.Rows; y++ {
 		for x := 0; x < snap.Cols; x++ {
-			r.drawCell(drawer, snap.Cells[y][x], x, y)
+			r.drawCell(drawer, snap.Cells[y][x], x, y, cellW, cellH)
 		}
 	}
+	return r.img
 }
 
-// drawCell paints one cell's background then its glyph. Background is a solid
-// fill; the glyph is drawn in the foreground color at the cell baseline. The
-// reverse attribute is already baked into fg/bg by vt10x at parse time, so no
-// swap happens here — doing it again would double-invert.
-func (r *gridRenderer) drawCell(drawer *xfont.Drawer, c snapCell, col, row int) {
-	x0 := col * r.cellW
-	y0 := row * r.cellH
-	rect := image.Rect(x0, y0, x0+r.cellW, y0+r.cellH)
+// refresh requests a repaint at whatever size the raster is actually
+// showing at — the real rasterization now happens in paint (Fyne's own
+// Generator callback, invoked with the current on-screen size), not here.
+func (r *gridRenderer) refresh() {
+	canvas.Refresh(r.raster)
+}
+
+// drawCell paints one cell's background then its glyph, in a box cellW x
+// cellH pixels wide/tall (the caller's per-cell size, proportional to the
+// raster's actual current pixel dimensions — see paint's doc comment, not
+// necessarily equal to the font's own natural cellW/cellH). Background is a
+// solid fill; the glyph is drawn in the foreground color at the cell
+// baseline. The reverse attribute is already baked into fg/bg by vt10x at
+// parse time, so no swap happens here — doing it again would double-invert.
+func (r *gridRenderer) drawCell(drawer *xfont.Drawer, c snapCell, col, row int, cellW, cellH float64) {
+	x0 := int(float64(col) * cellW)
+	y0 := int(float64(row) * cellH)
+	x1 := int(float64(col+1) * cellW)
+	y1 := int(float64(row+1) * cellH)
+	rect := image.Rect(x0, y0, x1, y1)
 
 	bg := paletteColor(c.BG)
 	draw.Draw(r.img, rect, &image.Uniform{C: bg}, image.Point{}, draw.Src)
@@ -114,7 +139,12 @@ func (r *gridRenderer) drawCell(drawer *xfont.Drawer, c snapCell, col, row int) 
 		return
 	}
 	drawer.Src = &image.Uniform{C: paletteColor(c.FG)}
-	drawer.Dot = fixed.P(x0, y0+r.ascent)
+	// Scale the font's own natural ascent by how much this cell's actual
+	// height differs from the font's natural cellH, so the glyph baseline
+	// stays roughly cell-centered even when cellH (derived from the
+	// widget's real size) isn't exactly the font's own line height.
+	ascent := int(float64(r.ascent) * cellH / float64(r.cellH))
+	drawer.Dot = fixed.P(x0, y0+ascent)
 	drawer.DrawString(string(c.Rune))
 }
 

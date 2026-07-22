@@ -18,6 +18,14 @@ const (
 	defaultCols = 80
 	defaultRows = 24
 
+	// minSaneCols/minSaneRows floor what Resize treats as a real, user-
+	// intended grid size. Below this, a resize is assumed to be a Fyne
+	// layout transient (an as-yet-unsettled container reporting a
+	// placeholder size, e.g. gridDims' own 1x1 floor on a zero-area pass),
+	// not something to actually apply — see Resize's doc comment.
+	minSaneCols = 10
+	minSaneRows = 3
+
 	// refreshInterval caps repaint frequency. PTY output from a chatty
 	// process (a build log, `yes`, a progress bar) can arrive thousands of
 	// times a second; repainting once per read would flood the Fyne UI
@@ -347,6 +355,23 @@ func (s *Session) Resize(size fyne.Size) {
 	s.BaseWidget.Resize(size)
 
 	cols, rows := gridDims(int(size.Width), int(size.Height), s.cellW, s.cellH)
+	if cols < minSaneCols || rows < minSaneRows {
+		// Ignore transient near-zero sizes entirely — Fyne can call Resize
+		// with a not-yet-laid-out container's placeholder geometry (as small
+		// as 1x1 after gridDims' own floor) before a parent like DocTabs
+		// settles into its real size. Before ptyResized existed, the
+		// same-size-is-a-no-op check below happened to also filter these
+		// out whenever they coincided with the (cols, rows) placeholder
+		// already in place; forcing the first real resize through (below)
+		// closed that accidental filter, so this does the filtering
+		// properly instead. Without it, such a transient would shrink
+		// render.resize's vt10x grid down to ~1 row, which — unlike a
+		// same-or-larger resize — discards whatever the shell had already
+		// printed beyond that row (vt10x.State.resize only preserves
+		// min(oldRows, newRows) of scrollback), permanently losing the
+		// shell's startup banner before the real layout size ever applies.
+		return
+	}
 	if cols == s.cols && rows == s.rows && s.ptyResized {
 		return
 	}
@@ -392,8 +417,25 @@ func (s *Session) refreshCursor() {
 
 	visible := on && snap.CursorVisible
 	s.cursor.Hidden = !visible
-	s.cursor.Move(fyne.NewPos(float32(snap.CursorX*s.cellW), float32(snap.CursorY*s.cellH)))
-	s.cursor.Resize(fyne.NewSize(float32(s.cellW), float32(s.cellH)))
+
+	// Position/size the cursor from the widget's ACTUAL current size divided
+	// by the grid dimensions, not the raw per-cell font metrics (cellW/
+	// cellH) directly: canvas.Raster stretches its rasterized image to
+	// whatever size Fyne's layout actually assigns the widget, which is not
+	// always exactly cols*cellW x rows*cellH (that's only MinSize — a
+	// layout is free to give a widget more room than its minimum). Using
+	// the raw metrics positioned the cursor overlay in that unstretched
+	// space, drifting further from the row it was meant to sit on as
+	// cursorY grows — worst at the bottom row, which is exactly where
+	// scrolled output (e.g. a long `ls -al`) leaves the cursor, matching
+	// the reported "cursor ends up north of the prompt" symptom. Deriving
+	// the effective cell size from the widget's real Size() instead keeps
+	// it exactly in step with however the raster is actually stretched.
+	sz := s.Size()
+	cols, rows := float32(max(s.cols, 1)), float32(max(s.rows, 1))
+	cellW, cellH := sz.Width/cols, sz.Height/rows
+	s.cursor.Move(fyne.NewPos(float32(snap.CursorX)*cellW, float32(snap.CursorY)*cellH))
+	s.cursor.Resize(fyne.NewSize(cellW, cellH))
 	canvas.Refresh(s.cursor)
 }
 

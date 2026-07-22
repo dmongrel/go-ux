@@ -428,7 +428,7 @@ func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
 	}
 
 	success = true
-	return &winPTYSession{
+	sess := &winPTYSession{
 		wp:            wp,
 		conin:         conin,
 		conout:        conout,
@@ -437,7 +437,9 @@ func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
 		coninEvent:    coninEvent,
 		conoutEvent:   conoutEvent,
 		shutdownEvent: shutdownEvent,
-	}, nil
+	}
+
+	return sess, nil
 }
 
 // connectWinptyPipe fetches a named-pipe path (winpty_conin_name/

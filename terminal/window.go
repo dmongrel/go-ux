@@ -136,5 +136,18 @@ func (w *Window) SetSize(width, height float32) *Window {
 func (w *Window) Show() {
 	uiMu.Lock()
 	w.win.Show()
+	w.win.RequestFocus() // raise/focus the OS window itself, not just a widget within it
 	uiMu.Unlock()
+
+	// Focus whatever tab ended up selected, so the window opens ready to
+	// type into without an extra click — matching every other desktop
+	// terminal, and what TabView's own AddTab/OnSelected already do
+	// correctly for every tab added after this point (switching tabs, or
+	// the "+" button). Deliberately done here, after Show, not at
+	// construction time: TabView's initial tab(s) were added (and selected,
+	// via AddTab's own SelectIndex) before this window even existed, and
+	// separately, Fyne's canvas focus only seems to reliably "stick" — take
+	// real OS-level keyboard input — once the window has actually been
+	// shown, not merely constructed with content set.
+	w.tv.handleSelected(w.tv.tabs.Selected())
 }

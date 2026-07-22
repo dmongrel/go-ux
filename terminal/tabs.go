@@ -4,6 +4,7 @@ import (
 	"log"
 	"sync"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 )
 
@@ -68,6 +69,7 @@ func newTabView(shells []ShellDef, closeOnExit bool) *TabView {
 	t.tabs = container.NewDocTabs()
 	t.tabs.CreateTab = t.createTab
 	t.tabs.OnClosed = t.handleClosed
+	t.tabs.OnSelected = t.handleSelected
 
 	for _, def := range shells {
 		t.AddTab(def)
@@ -204,4 +206,41 @@ func (t *TabView) handleClosed(item *container.TabItem) {
 	if sess != nil {
 		_ = sess.Close()
 	}
+}
+
+// handleSelected is DocTabs.OnSelected: fired whenever the selected tab
+// changes, whether from a user click, the keyboard, or this package's own
+// AddTab/newTabItem selecting a freshly-added tab. It gives that tab's
+// Session keyboard focus, matching every other desktop terminal (a newly
+// selected/opened tab is immediately ready to type into, no extra click
+// needed) — without this, DocTabs switches which Session is visible but
+// canvas focus stays wherever it happened to be (often nowhere, or the
+// previous tab's now-hidden Session), so typing did nothing until the user
+// clicked the terminal area first.
+func (t *TabView) handleSelected(item *container.TabItem) {
+	t.mu.Lock()
+	sess := t.byItem[item]
+	t.mu.Unlock()
+
+	if sess == nil {
+		return
+	}
+	// fyne.Do (deliberately not doUI/uiMu) — this fires synchronously from
+	// within DocTabs' own tap-dispatch call chain (the tab header's
+	// onTapped -> Select -> selectIndex -> this callback), and a focus
+	// request made reentrantly like that was observed not to stick —
+	// switching tabs left the newly selected session unfocused even though
+	// the identical call from Window.Show (not reentrant into any Fyne
+	// dispatch) worked correctly for the initial tab; fyne.Do defers to the
+	// next event-loop turn, avoiding whatever about that reentrancy
+	// silently drops it. Not doUI specifically because AddTab calls
+	// SelectIndex (which synchronously fires this same callback) while
+	// already holding uiMu — doUI trying to reacquire uiMu from within that
+	// call chain self-deadlocks the same goroutine against itself, which
+	// then starves every background loop's own doUI call on the same lock.
+	fyne.Do(func() {
+		if c := fyne.CurrentApp().Driver().CanvasForObject(sess); c != nil {
+			c.Focus(sess)
+		}
+	})
 }

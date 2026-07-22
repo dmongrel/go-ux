@@ -22,6 +22,7 @@ package main
 import (
 	"log"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -38,6 +39,13 @@ func main() {
 	}
 	defer database.Close()
 
+	// Declares this app (and everything it calls into, including go-ux/
+	// terminal's own background goroutines) as fully using the fyne.Do
+	// threading model — without it, Run prints a "not migrated" warning on
+	// every launch even though widget.go's readLoop/refreshLoop/blinkLoop/
+	// waitLoop already only ever touch CanvasObjects via fyne.Do (see
+	// widget.go's uiMu/doUI). See https://docs.fyne.io/started/goroutines.
+	app.SetMetadata(fyne.AppMetadata{Migrations: map[string]bool{"fyneDo": true}})
 	fyneApp := app.NewWithID("go-ux.test-terminal")
 
 	master := fyneApp.NewWindow("Terminal Demo")

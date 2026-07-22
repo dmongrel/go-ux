@@ -6,6 +6,7 @@ package main
 import (
 	"log"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 
 	"go-ux/settings"
@@ -23,6 +24,10 @@ func main() {
 		log.Fatalf("seed example data: %v", err)
 	}
 
+	// See terminaldemo/test_terminal.go's matching call for why: declares
+	// this app as fully using the fyne.Do threading model, silencing Run's
+	// "not migrated" warning.
+	app.SetMetadata(fyne.AppMetadata{Migrations: map[string]bool{"fyneDo": true}})
 	fyneApp := app.NewWithID("go-ux.test-settings")
 
 	win, err := settings.NewWindow(fyneApp, d)

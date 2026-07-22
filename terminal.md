@@ -45,7 +45,32 @@ func RegisterSettings(database *db.DB) error
 `DetectShells` probes the current machine for runnable shells — PowerShell
 (`pwsh.exe` preferred over `powershell.exe`), Git Bash, and `cmd.exe` on
 Windows — returning only the ones actually found. Callers should handle a
-partial (even empty) result gracefully; `Window`/`TabView` do.
+partial (even empty) result gracefully; `Window`/`TabView` do. It leaves
+`WorkDir` empty on every `ShellDef` it returns.
+
+`ShellDef.WorkDir` is the directory a spawned shell starts in. Left empty
+(the default `DetectShells()` and `NewWindowFromSettings` both use), the
+spawned shell inherits whatever directory the *host process* itself was
+launched from (winpty's `cwd` is passed as `NULL`, which is `CreateProcess`'s
+own "inherit the caller's current directory" behavior) — not the project a
+host app might currently have open, and not anything this package tracks or
+infers on its own. A host app that wants shells to start in a specific
+directory (e.g. the currently-open project's root) must set `WorkDir`
+itself on each `ShellDef` before spawning:
+
+```go
+shells := terminal.DetectShells()
+for i := range shells {
+    shells[i].WorkDir = currentProjectDir
+}
+win, err := terminal.NewWindow(app, shells)
+```
+
+`NewWindowFromSettings` doesn't expose an equivalent override — it always
+calls `DetectShells()` internally with no way to inject a `WorkDir` — so a
+caller that wants both the settings-registry integration (`default_shell`/
+`close_on_exit`) and a specific starting directory needs the manual
+`DetectShells()` + `WorkDir` + `NewWindow` path above instead.
 
 `NewSession` spawns def's shell process (via winpty) and returns a `Session`:
 a Fyne widget rendering that shell's live VT-parsed screen grid. `OnExit`'s
@@ -183,6 +208,29 @@ list of what's not implemented.
   capture for UI state). `RegisterSettings` seeds only two properties
   (`default_shell`, `close_on_exit`) — a placeholder slice of a much larger
   planned settings surface (~22 properties), not the full design.
+- **Known open rendering bugs**, found via manual visual testing (see
+  render.go and vtstate.go), not yet root-caused:
+  - Glyph/line rendering is visually inconsistent — some horizontal lines
+    render at 2px where they should be 1px, inconsistently across the grid.
+    Suspected cause: `gridRenderer` rasterizes into a fixed-size
+    `image.RGBA` at `cellW`/`cellH` *device* pixels (render.go's
+    `loadMonospaceFace`, `DPI: 72` i.e. 1 point == 1 pixel), but
+    `canvas.Raster` then nearest-neighbor-scales (`ImageScalePixels`) that
+    image to whatever *logical* size Fyne's layout assigns the widget —
+    `Session.Resize`'s `gridDims` mixes the two unit spaces (dividing a
+    logical `fyne.Size` by device-pixel `cellW`/`cellH`) without accounting
+    for `canvas.Scale()`. A non-1:1 or non-integer logical-to-device ratio
+    would make nearest-neighbor scaling round row/column boundaries
+    inconsistently — matches the reported symptom, but not yet confirmed.
+  - ~~The cursor can end up positioned north of (above) the actual prompt
+    line after a scrolling command~~ — **fixed**: `refreshCursor` (widget.go)
+    was positioning the cursor overlay from the raw per-cell font metrics
+    (`cellW`/`cellH`) rather than the widget's actual current size divided
+    by the grid dimensions. `canvas.Raster` stretches its rasterized image
+    to whatever size Fyne's layout actually assigns the widget, which isn't
+    always exactly `cols*cellW x rows*cellH` (that's only `MinSize`); the
+    drift grew with row number and was worst at the bottom row — exactly
+    where scrolled output leaves the cursor, matching the symptom.
 - **Desktop only — more strongly than this repo's other packages.**
   `settings`/`dialog` are untested against Fyne's mobile driver but could in
   principle run there; `terminal` cannot, even in principle: it shells out to
@@ -198,3 +246,41 @@ list of what's not implemented.
   equivalently-shaped "Terminal" node) exists in `database` for its
   registry-sourced defaults to take effect; otherwise it silently falls back
   to `DetectShells()`'s own ordering and close-on-exit off.
+
+## Attribution
+
+Third-party code and design this package depends on or was informed by:
+
+- **[winpty](https://github.com/rprichard/winpty)** (rprichard, MIT license)
+  — the actual PTY backend on Windows. `winpty.dll`/`winpty-agent.exe` are
+  vendored binaries, embedded via `go:embed` (`terminal/winpty/`, license
+  copy at `terminal/winpty/LICENSE`); `winpty_windows.go` is this package's
+  own Go bindings against winpty's C API, not winpty's own code.
+- **[pty4j](https://github.com/JetBrains/pty4j)** (JetBrains, Eclipse Public
+  License v1.0) — JetBrains' own winpty binding, the one IntelliJ's terminal
+  uses. No pty4j code is copied or vendored (this package has no Java/JVM
+  dependency and pty4j's own EPL terms aren't triggered), but two
+  correctness-critical designs in `winpty_windows.go` were read directly
+  from pty4j's source and ported to Go because independently-arrived-at
+  approaches here were provably wrong: the overlapped-I/O-plus-shutdown-
+  event pattern for `Read`/`Write`/`Close` (mirroring pty4j's
+  `NamedPipe.java`, needed to avoid `STATUS_HEAP_CORRUPTION` from closing a
+  pipe handle while a synchronous read/write was still pending on it — see
+  `overlappedIO`'s doc comment), and the `winpty_set_size` retry loop called
+  before spawning the child process (mirroring pty4j's `WinPty.java`,
+  documented there as a workaround for a winpty/console rendering bug —
+  fixed PowerShell's console host never painting its first prompt).
+- **[vt10x](https://github.com/hinshun/vt10x)** (James Gray, MIT license) —
+  the VT100/xterm parser this package wraps (`vtstate.go`); a normal Go
+  module dependency (see `go.mod`), not vendored or modified.
+- **[golang.org/x/image](https://pkg.go.dev/golang.org/x/image)** (the Go
+  team, BSD-3-Clause) — `font/opentype` for loading Fyne's bundled monospace
+  font at a specific pixel size, and `font/basicfont` as the fallback face
+  if that parse ever fails (`render.go`'s `loadMonospaceFace`); a normal Go
+  module dependency, not vendored or modified.
+- **[IntelliJ Community Edition](https://github.com/jetbrains/intellij-community)**
+  — the general design reference this repo's own `CLAUDE.md` names for
+  UX/design patterns (settings panel layout, control panel behavior); the
+  terminal-specific research above led to pty4j directly rather than
+  intellij-community itself, since pty4j (not intellij-community, which only
+  depends on it) is where IntelliJ's actual winpty integration code lives.
