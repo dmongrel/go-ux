@@ -858,3 +858,9 @@ git commit -m "Add ConPTY-backed ptySession: spawn, read/write, resize, close"
 ## After this plan lands
 
 Reopen the design doc and plan the next slice: `vtstate.go` (wrap `github.com/hinshun/vt10x`, feeding it bytes read from `ptySession.Read`), `render.go` (the `canvas.Raster` rendering — needs a human at a Windows GUI to visually validate, unlike everything in this plan), and `widget.go` (the `fyne.Do`-wrapped background read loop that ties `ptySession` to the renderer). Use this plan's `ptySession` interface and `ShellDef`/`DetectShells()` as fixed, already-tested foundations — don't redesign them as part of that follow-up planning pass.
+
+**Demo harness requirement (for that follow-up plan's final task):** once the VT-rendering widget exists, add a `terminaldemo/` entry point (own directory + `package main`, mirroring `dialogdemo/`'s pattern — see CLAUDE.md's package layout notes on why `dialogdemo/` isn't at repo root) with a persistent master window holding two buttons:
+- **Open Terminal** — opens a live terminal widget/window using the PTY foundation from this plan.
+- **Open Settings** — opens the settings dialog associated with the terminal (once a terminal settings schema exists in `settings/`), so both can be exercised side by side.
+
+This is a marker for whoever plans that follow-up slice, not a task of this plan — this plan has no VT rendering or widget to demo yet (see scope note above).
