@@ -91,3 +91,40 @@ func TestSessionTitleFallsBackToShellName(t *testing.T) {
 		t.Errorf("Title() = %q, want %q", got, "cmd.exe")
 	}
 }
+
+func TestGridDimsAppliesLineHeightAndColumnWidthMultipliers(t *testing.T) {
+	cols, rows := gridDims(800, 480, 10, 20, 1.0, 1.0)
+	wantCols, wantRows := 80, 24
+	if cols != wantCols || rows != wantRows {
+		t.Fatalf("gridDims(800, 480, 10, 20, 1.0, 1.0) = %d,%d, want %d,%d", cols, rows, wantCols, wantRows)
+	}
+
+	// Doubling column width halves how many columns fit in the same pixel
+	// width; doubling line height halves how many rows fit.
+	cols2, rows2 := gridDims(800, 480, 10, 20, 2.0, 2.0)
+	if cols2 != wantCols/2 {
+		t.Errorf("gridDims with ColumnWidth=2.0: cols = %d, want %d", cols2, wantCols/2)
+	}
+	if rows2 != wantRows/2 {
+		t.Errorf("gridDims with LineHeight=2.0: rows = %d, want %d", rows2, wantRows/2)
+	}
+}
+
+func TestSessionReactsToLiveFontSettingsChange(t *testing.T) {
+	test.NewApp()
+	defer setFontSettings(defaultFontSettings) // restore for other tests
+
+	sess, err := NewSession(cmdDef("font-live-test"))
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close()
+
+	before := sess.render.cellH
+	setFontSettings(FontSettings{Family: "", Size: 24, LineHeight: 1.0, ColumnWidth: 1.0})
+
+	after := sess.render.cellH
+	if after == before {
+		t.Errorf("session's render.cellH unchanged after setFontSettings (before=%d, after=%d) — session did not react to the live font change", before, after)
+	}
+}

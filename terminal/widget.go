@@ -163,6 +163,14 @@ func NewSession(def ShellDef) (*Session, error) {
 	go s.blinkLoop()
 	go s.waitLoop()
 
+	registerFontListener(s, func(fs FontSettings) {
+		s.render.applyFontSettings(fs)
+		doUI(func() {
+			s.Resize(s.Size())
+			s.refreshCursor()
+		})
+	})
+
 	return s, nil
 }
 
@@ -343,6 +351,7 @@ func (s *Session) Close() error {
 		s.closeErr = s.pty.Close()
 	})
 	s.wg.Wait()
+	unregisterFontListener(s)
 	return s.closeErr
 }
 
@@ -354,7 +363,11 @@ func (s *Session) Close() error {
 func (s *Session) Resize(size fyne.Size) {
 	s.BaseWidget.Resize(size)
 
-	cols, rows := gridDims(int(size.Width), int(size.Height), s.cellW, s.cellH)
+	s.render.mu.Lock()
+	lineHeight, columnWidth := s.render.lineHeight, s.render.columnWidth
+	s.render.mu.Unlock()
+
+	cols, rows := gridDims(int(size.Width), int(size.Height), s.cellW, s.cellH, lineHeight, columnWidth)
 	if cols < minSaneCols || rows < minSaneRows {
 		// Ignore transient near-zero sizes entirely — Fyne can call Resize
 		// with a not-yet-laid-out container's placeholder geometry (as small
@@ -394,15 +407,20 @@ func (s *Session) Resize(size fyne.Size) {
 	s.refreshCursor()
 }
 
-// gridDims converts a pixel size and per-cell box into a grid cell count,
-// clamped to at least 1x1 so a zero-area layout pass can't collapse the grid.
-// Extracted as a pure function so the size math is unit-testable without
-// spawning a PTY.
-func gridDims(width, height, cellW, cellH int) (cols, rows int) {
+// gridDims converts a pixel size, per-cell box, and LineHeight/ColumnWidth
+// multipliers into a grid cell count, clamped to at least 1x1 so a
+// zero-area layout pass can't collapse the grid. Extracted as a pure
+// function so the size math is unit-testable without spawning a PTY.
+func gridDims(width, height, cellW, cellH int, lineHeight, columnWidth float64) (cols, rows int) {
 	if cellW <= 0 || cellH <= 0 {
 		return 1, 1
 	}
-	return max(1, width/cellW), max(1, height/cellH)
+	effW := float64(cellW) * columnWidth
+	effH := float64(cellH) * lineHeight
+	if effW <= 0 || effH <= 0 {
+		return 1, 1
+	}
+	return max(1, int(float64(width)/effW)), max(1, int(float64(height)/effH))
 }
 
 // refreshCursor repositions and re-shows/hides the cursor overlay from the
