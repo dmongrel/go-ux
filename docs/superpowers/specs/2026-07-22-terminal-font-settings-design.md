@@ -174,6 +174,65 @@ comparing `event.Name` against `desktop.KeyControlLeft`/`KeyControlRight`.
   drift apart (the exact class of bug the prior session's cursor-drift fix
   addressed).
 
+### 7. Settings-window live update — `db/db.go`, `settings/settings.go`
+
+Resolves the staging-vs-live-write race per explicit direction: a value
+changed directly in the db (by terminal's Ctrl+scroll write, or by anything
+else) must be forcefully accepted by the open Settings window's own control
+for that property — overriding whatever the user separately staged there —
+so that OK/Apply/Cancel all behave correctly without any special-casing in
+their own logic:
+
+- **OK/Apply** only ever write `w.staged`. If the live value was force-
+  accepted (staged entry discarded, see below), `w.staged` no longer
+  mentions that key at all, and `SaveProperties` (already `UPDATE ... WHERE
+  key = ?` per key present in the map — confirmed in `db/db.go`, so keys
+  absent from the map are untouched) leaves the live value exactly as it
+  was. No change needed to `handleApply`/`handleOK`.
+- **Cancel** already never writes anything (`handleCancel` only clears
+  `w.staged` and closes) — so a live external write, made directly through
+  `SaveProperties`, already survives Cancel today with no change needed
+  there either.
+- **Reopening Settings** already always re-reads current db state fresh
+  (`prefetchProperties` runs at construction) — no change needed.
+
+The one real gap: if the user has Settings open AND independently retypes
+the *same* property there before a live external write happens elsewhere,
+their now-stale staged edit would otherwise still win when they click
+OK/Apply (`w.staged` would contain their old value, and `SaveProperties`
+would overwrite the newer live one with it). Closing that gap needs an
+actual live-refresh path, since `settings.Window` currently has no way to
+learn about a write it didn't itself make — `w.allProps` is a one-time
+snapshot from construction, per `prefetchProperties`.
+
+Add a lightweight change-notification to `db.DB`:
+
+```go
+// OnPropertiesChanged registers fn to be called after every successful
+// SaveProperties(nodeID, ...) call, with the map of keys that changed.
+// Returns an unsubscribe function. Safe to call from any goroutine.
+func (d *DB) OnPropertiesChanged(nodeID int64, fn func(values map[string]string)) (unsubscribe func())
+```
+
+`settings.Window` subscribes for every node it prefetched properties for, at
+construction time, unsubscribing when the window closes. On notification for
+a node+key:
+
+1. The cached `Property.Value` in `w.allProps` for that key is updated to
+   the new value, so it's correct even before that row is next rendered.
+2. `delete(w.staged[nodeID], key)` — the forceful accept: whatever the user
+   had typed/selected for that same property, not yet committed, is
+   discarded in favor of the live value.
+3. If that node's properties page is the one currently displayed
+   (`uid == w.selectedUID`), the row for that key is refreshed in place, so
+   the user sees the new value immediately rather than only after
+   navigating away and back.
+
+terminal's Ctrl+scroll debounced write calls the existing
+`database.SaveProperties` — no new write path on the terminal side, this is
+purely `SaveProperties` gaining a notification side-effect plus
+`settings.Window` reacting to it.
+
 ## Data flow
 
 ```
@@ -190,10 +249,14 @@ Ctrl+scroll on any Session
     │  updates shared FontSettings.Size directly (no db round-trip)
     ▼
 Every registered *Session notified → re-layout
-    │  (debounced) 
+    │  (debounced)
     ▼
-db write-through, if a db is registered — independent of any Settings
-window that might be open with unsaved staged edits (see below)
+db.SaveProperties (write-through), if a db is registered
+    │
+    ▼
+db fires OnPropertiesChanged → any open settings.Window force-accepts the
+new value for that key, discarding a stale staged edit if one exists
+(see "Settings-window live update" above)
 ```
 
 ## Error handling
@@ -215,11 +278,9 @@ window that might be open with unsaved staged edits (see below)
   separate limits); `line_height`/`column_width` to 0.5–3.0 (anything
   outside that is either illegibly cramped or wastes most of the widget on
   blank space between cells).
-- The Settings-window-staging-vs-live-write race (user has unsaved edits
-  open in Settings while Ctrl+scrolling in a terminal) is left unresolved by
-  design, per explicit direction: whichever action the user does last to
-  actually commit (click OK/Apply, or another scroll) wins — no attempt to
-  detect or merge the conflict.
+- The Settings-window-staging-vs-live-write race (user has Settings open
+  while Ctrl+scrolling in a terminal) is resolved, not left open — see
+  "Settings-window live update" below.
 
 ## Testing
 
@@ -228,7 +289,12 @@ window that might be open with unsaved staged edits (see below)
   installed on the CI/dev machine) to verify the metrics-based filter.
 - `db`/`settings`: `PropertyFloat` round-trips through `AddProperty`/
   `GetProperties` and renders as a validated `Entry` — same shape as the
-  existing `PropertyInt` tests.
+  existing `PropertyInt` tests. `OnPropertiesChanged` is directly
+  unit-testable against `db.DB` alone (register a subscriber, call
+  `SaveProperties`, assert the callback fired with the right values) — and
+  `settings.Window`'s force-accept reaction (staged entry discarded,
+  `w.allProps` updated) is testable the same way `settings`'s own existing
+  staging tests already exercise `w.staged` without a real GUI.
 - `render.go`/`widget.go`: extend the existing pure-state tests
   (`TestGridRendererResizeKeepsSizesConsistent`-style) to cover
   `LineHeight`/`ColumnWidth` multipliers changing `gridDims`'s output and
