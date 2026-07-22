@@ -20,13 +20,15 @@ When researching UX/design patterns for dialogs and control panels (e.g. setting
 Package layout:
 - `settings/` — the settings control panel: Fyne `Window` with a tree (left) and generated properties form (right), OK/Cancel/Apply staging. Non-blocking (`NewWindow`+`Show`).
 - `dialog/` — modal info/error/custom dialog windows. `Show` blocks the calling goroutine until OK/Cancel/close, so it must be called from a goroutine other than the one running `app.Run()`. See `dialog/dialog.go` doc comment.
+- `terminal/` — terminal-emulator window: ConPTY-backed shell sessions rendered as VT100/xterm grids (`vt10x` + hand-rasterized `canvas.Raster`), tabbed via `container.DocTabs`. Non-blocking (`NewWindow`/`NewWindowFromSettings`+`Show`), `db` integration optional. See `terminal.md`.
 - `db/` — general-purpose persistence package; owns all SQLite access (settings registry + per-component UI-state blobs); no other package touches SQLite directly
 - `internal/sqlite/` — pure-Go SQLite connection + schema migration (backs `db`), not exported
 - `test/` — in-memory `db.DB` fixture + example data seeding for this repo's own tests only
 - `test_settings.go` — manual/visual entry point (`go run test_settings.go`) that seeds example Terminal/Version Control data and opens the settings window
 - `dialogdemo/` — manual/visual entry point (`go run ./dialogdemo`) that shows one of each dialog kind. In its own directory, not at repo root, because a directory can only have one `package main`/`func main` and `test_settings.go` already occupies that slot at root.
+- `terminaldemo/` — manual/visual entry point (`go run ./terminaldemo`) with Open Settings / Open Terminal buttons sharing one in-memory `db.DB`. Own directory for the same one-`package main`-per-directory reason as `dialogdemo/`.
 
-Docs for downstream consumers: `settings.md`, `db.md` (project root). Add a `dialog.md` alongside them if `dialog/`'s public API needs the same treatment.
+Docs for downstream consumers: `settings.md`, `db.md`, `dialog.md`, `terminal.md` (project root) — one per package with a public API meant for consumers.
 
 Build/test:
 - `go build ./...`, `go vet ./...`, `go test ./...`
