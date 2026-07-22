@@ -4,8 +4,12 @@ package terminal
 
 import (
 	"fmt"
+	"os"
+	"sort"
+	"strings"
 	"sync"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -89,11 +93,30 @@ func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
 		return nil, fmt.Errorf("terminal: encode command line: %w", err)
 	}
 
+	var curDir *uint16
+	if def.WorkDir != "" {
+		curDir, err = syscall.UTF16PtrFromString(def.WorkDir)
+		if err != nil {
+			windows.ClosePseudoConsole(hpc)
+			windows.CloseHandle(stdinWrite)
+			windows.CloseHandle(stdoutRead)
+			return nil, fmt.Errorf("terminal: encode work dir: %w", err)
+		}
+	}
+
+	envBlock, err := buildEnvBlock(def.Env)
+	if err != nil {
+		windows.ClosePseudoConsole(hpc)
+		windows.CloseHandle(stdinWrite)
+		windows.CloseHandle(stdoutRead)
+		return nil, fmt.Errorf("terminal: encode environment: %w", err)
+	}
+
 	var pi windows.ProcessInformation
 	err = windows.CreateProcess(
 		nil, cmdLine, nil, nil, false,
 		windows.EXTENDED_STARTUPINFO_PRESENT|windows.CREATE_UNICODE_ENVIRONMENT,
-		nil, nil, &si.StartupInfo, &pi,
+		envBlock, curDir, &si.StartupInfo, &pi,
 	)
 	if err != nil {
 		windows.ClosePseudoConsole(hpc)
@@ -112,7 +135,8 @@ func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
 }
 
 // commandLine renders def into a single Windows command-line string: the
-// executable path, quoted if it contains spaces, followed by its arguments.
+// executable path, quoted if it contains spaces, followed by its arguments,
+// each individually quoted the same way if it contains a space.
 func commandLine(def ShellDef) string {
 	path := def.Path
 	if hasSpace(path) {
@@ -120,18 +144,56 @@ func commandLine(def ShellDef) string {
 	}
 	cmd := path
 	for _, a := range def.Args {
+		if hasSpace(a) {
+			a = `"` + a + `"`
+		}
 		cmd += " " + a
 	}
 	return cmd
 }
 
 func hasSpace(s string) bool {
-	for _, r := range s {
-		if r == ' ' {
-			return true
+	return strings.Contains(s, " ")
+}
+
+// buildEnvBlock renders overrides into the UTF-16 double-null-terminated
+// "KEY=VALUE\0...\0\0" block windows.CreateProcess's lpEnvironment parameter
+// requires (see CREATE_UNICODE_ENVIRONMENT). When overrides is empty, it
+// returns nil so CreateProcess is told to fully inherit the parent's
+// environment (the Windows behavior for a NULL environment block) — this
+// keeps today's default behavior unchanged for the common case where no
+// caller sets ShellDef.Env. When overrides is non-empty, the block is built
+// from the current process's inherited environment (os.Environ()) with
+// overrides layered on top, so a session can tweak or add a few variables
+// without callers having to reconstruct the whole environment themselves.
+func buildEnvBlock(overrides map[string]string) (*uint16, error) {
+	if len(overrides) == 0 {
+		return nil, nil
+	}
+
+	merged := make(map[string]string)
+	for _, kv := range os.Environ() {
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			merged[kv[:i]] = kv[i+1:]
 		}
 	}
-	return false
+	for k, v := range overrides {
+		merged[k] = v
+	}
+
+	keys := make([]string, 0, len(merged))
+	for k := range merged {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // deterministic order; Windows doesn't require sorting
+
+	var block []uint16
+	for _, k := range keys {
+		block = append(block, utf16.Encode([]rune(k+"="+merged[k]+"\x00"))...)
+	}
+	block = append(block, 0) // final extra null terminates the block
+
+	return &block[0], nil
 }
 
 func newPseudoConsoleAttributeList(hpc windows.Handle) (ptr unsafe.Pointer, buf []byte, err error) {
@@ -167,6 +229,11 @@ func newPseudoConsoleAttributeList(hpc windows.Handle) (ptr unsafe.Pointer, buf 
 		0, 0,
 	)
 	if r1 == 0 {
+		// InitializeProcThreadAttributeList succeeded but this call didn't,
+		// so the caller never gets listPtr back and can't defer the matching
+		// cleanup itself — do it here instead, mirroring what that deferred
+		// call would have done.
+		deleteProcThreadAttributeList(listPtr)
 		return nil, nil, fmt.Errorf("terminal: UpdateProcThreadAttribute: %w", callErr)
 	}
 	return listPtr, buf, nil

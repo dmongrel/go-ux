@@ -1,5 +1,5 @@
 // Package terminal is an embeddable, tabbed, PTY-backed terminal widget for
-// Fyne: GitBash, PowerShell, and cmd.exe on Windows to start. Unlike
+// Fyne: Git Bash, PowerShell, and cmd.exe on Windows to start. Unlike
 // go-ux/dialog and go-ux/settings, this package spawns real OS processes
 // through a pseudo-console (ConPTY on Windows — see conpty_windows.go) and
 // reads their output on a background goroutine, so it is the first package
