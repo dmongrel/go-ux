@@ -36,13 +36,21 @@ const (
 // pseudo-console, its output parsed into a VT grid and drawn via a
 // canvas.Raster, with a blinking cursor overlay. It embeds widget.BaseWidget
 // and satisfies fyne.CanvasObject, so a host app can drop it straight into
-// any Fyne container.
+// any Fyne container. It also implements fyne.Focusable, fyne.Tappable, and
+// fyne.Shortcutable (see keymap.go for the byte-translation tables and the
+// TypedRune/TypedKey/TypedShortcut methods below) so it can receive and
+// forward keyboard input to the shell.
 //
 // Threading is the crux of this type and is called out at each goroutine's
 // definition below: PTY output arrives on a background goroutine and must
 // cross onto the Fyne UI goroutine (via fyne.Do) before touching any
-// CanvasObject. Keyboard input is deferred to Task 2, so this type does not
-// yet implement fyne.Focusable.
+// CanvasObject. Keyboard input (TypedRune/TypedKey/TypedShortcut/
+// FocusGained/FocusLost/Tapped) is a different regime entirely: Fyne's input
+// dispatch already calls these on the UI goroutine, so they need NO fyne.Do
+// — see the doc comment on TypedRune below for the full reasoning. Don't
+// assume every PTY-adjacent method needs fyne.Do just because readLoop does;
+// the direction of data flow (input to the PTY vs. output from it) is what
+// decides that, not proximity to the PTY.
 type Session struct {
 	widget.BaseWidget
 
@@ -69,10 +77,17 @@ type Session struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 
-	mu       sync.Mutex // guards onExit and blinkOn
+	mu       sync.Mutex // guards onExit, blinkOn, and focused
 	onExit   func()
 	exitDone bool
 	blinkOn  bool
+
+	// focused tracks Focusable's gained/lost lifecycle. Nothing in this task
+	// visually depends on it yet (that's the Phase 8 cursor-contrast work,
+	// out of scope here), but it's tracked now so a later task doesn't need
+	// to thread focus state through from scratch, and so tests can assert on
+	// it independent of any visual behavior.
+	focused bool
 }
 
 // NewSession spawns def's shell attached to a fresh pseudo-console and returns
@@ -288,6 +303,87 @@ func (s *Session) refreshCursor() {
 	s.cursor.Move(fyne.NewPos(float32(snap.CursorX*s.cellW), float32(snap.CursorY*s.cellH)))
 	s.cursor.Resize(fyne.NewSize(float32(s.cellW), float32(s.cellH)))
 	canvas.Refresh(s.cursor)
+}
+
+// TypedRune handles ordinary printable character input (fyne.Focusable).
+//
+// Threading note: Fyne's input dispatch calls TypedRune directly on the UI
+// goroutine (the driver looks up the focused CanvasObject and invokes this
+// method inline, in response to a keyboard event) — the same goroutine
+// that's already running the event loop. Writing to the PTY here is a plain
+// blocking I/O call, not a CanvasObject touch, so it needs no fyne.Do
+// either way. This is the opposite direction from readLoop/refreshLoop
+// (PTY output flowing in, which DOES need fyne.Do to cross onto the UI
+// goroutine) — don't conflate the two just because both touch s.pty.
+func (s *Session) TypedRune(r rune) {
+	_, _ = s.pty.Write(runeBytes(r))
+}
+
+// TypedKey handles the fixed-function keys in keymap.go's mapping table
+// (fyne.Focusable). Same threading note as TypedRune: called on the UI
+// goroutine by Fyne's dispatch, no fyne.Do needed for the PTY write.
+func (s *Session) TypedKey(ev *fyne.KeyEvent) {
+	if data, ok := keyEventBytes(ev); ok {
+		_, _ = s.pty.Write(data)
+	}
+}
+
+// TypedShortcut handles Ctrl-modified key combinations (fyne.Shortcutable).
+//
+// This is required, not optional, for a terminal: Fyne's desktop driver
+// intercepts every Ctrl+<key> combination as a keyboard shortcut before it
+// would otherwise reach TypedKey — unconditionally, whether or not the
+// focused object implements fyne.Shortcutable (see fyne's glfw driver,
+// window.go's triggersShortcut/processKeyPressed). Without this method,
+// Ctrl+C would be swallowed as an empty clipboard Copy instead of reaching
+// the shell as the 0x03 SIGINT byte every interactive program relies on to
+// be interruptible.
+//
+// fyne.ShortcutCopy/Paste/Cut/SelectAll/Undo/Redo and
+// desktop.CustomShortcut all implement fyne.KeyboardShortcut (Key()/Mod()),
+// so a single type switch on that interface covers Ctrl+C/V/X/A/Z/Y plus
+// every other Ctrl+letter and Ctrl+[ \ ] combo uniformly — no need to
+// depend on the desktop package directly. Same UI-goroutine threading note
+// as TypedRune/TypedKey applies.
+func (s *Session) TypedShortcut(sh fyne.Shortcut) {
+	ks, ok := sh.(fyne.KeyboardShortcut)
+	if !ok {
+		return
+	}
+	if data, ok := ctrlKeyBytes(ks.Key()); ok {
+		_, _ = s.pty.Write(data)
+	}
+}
+
+// FocusGained is called when the terminal receives keyboard focus
+// (fyne.Focusable). Called on the UI goroutine by Fyne's focus-management
+// logic, so no fyne.Do is needed to update the guarded focused field.
+func (s *Session) FocusGained() {
+	s.mu.Lock()
+	s.focused = true
+	s.mu.Unlock()
+}
+
+// FocusLost is called when the terminal loses keyboard focus
+// (fyne.Focusable). Same threading note as FocusGained.
+func (s *Session) FocusLost() {
+	s.mu.Lock()
+	s.focused = false
+	s.mu.Unlock()
+}
+
+// Tapped requests keyboard focus when the terminal is clicked (fyne.
+// Tappable) — this is "focus-on-tap". A CanvasObject only receives
+// TypedRune/TypedKey/TypedShortcut once it holds canvas focus, and nothing
+// focuses it automatically on show; this mirrors the pattern Fyne's own
+// widget.Entry uses internally (its unexported requestFocus resolves the
+// object's canvas via the driver and calls Canvas.Focus). Called on the UI
+// goroutine (tap events are dispatched the same way key events are), so no
+// fyne.Do is needed.
+func (s *Session) Tapped(*fyne.PointEvent) {
+	if c := fyne.CurrentApp().Driver().CanvasForObject(s); c != nil {
+		c.Focus(s)
+	}
 }
 
 // CreateRenderer wires the raster and cursor overlay into a Fyne widget
