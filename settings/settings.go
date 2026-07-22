@@ -71,6 +71,18 @@ type Window struct {
 	// unsubscribers cancels every db.OnPropertiesChanged subscription this
 	// Window registered in NewWindow, called when the window closes.
 	unsubscribers []func()
+
+	// closed is set once the close intercept has run. A db write can still
+	// arrive after that (SaveProperties on this Window's db from any
+	// goroutine, e.g. a live Ctrl+scroll elsewhere) before the
+	// already-queued unsubscribe calls take effect, or if this Window was
+	// torn down by a path that bypasses SetCloseIntercept entirely (e.g.
+	// fyne.App.Quit()) — acceptExternalChange checks this to avoid touching
+	// a torn-down window's widgets. Both the write (close intercept) and
+	// the read (acceptExternalChange, via its fyne.Do wrapper) happen on
+	// the UI goroutine, so no separate lock is needed, consistent with this
+	// type's other UI-goroutine-only fields.
+	closed bool
 }
 
 // NewWindow builds a settings window backed by database. It reads the
@@ -142,6 +154,7 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 	tracker.Restore()
 	win.SetCloseIntercept(func() {
 		w.saveUIState()
+		w.closed = true
 		for _, unsubscribe := range w.unsubscribers {
 			unsubscribe()
 		}
@@ -358,6 +371,9 @@ func (w *Window) HandleOKForTest() {
 // Runs on the UI goroutine (the caller wraps it in fyne.Do) since it
 // touches formHolder when uid is the currently displayed page.
 func (w *Window) acceptExternalChange(uid string, nodeID int64, values map[string]string) {
+	if w.closed {
+		return
+	}
 	props := w.allProps[uid]
 	for key, value := range values {
 		for i := range props {

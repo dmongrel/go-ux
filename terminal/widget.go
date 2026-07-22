@@ -180,8 +180,16 @@ func NewSession(def ShellDef) (*Session, error) {
 	go s.waitLoop()
 
 	registerFontListener(s, func(fs FontSettings) {
-		s.render.applyFontSettings(fs)
+		// The whole reaction runs inside doUI, not just the Resize/cursor
+		// part: applyFontSettings itself ends in a canvas.Refresh, and this
+		// package's established convention (see refreshLoop/blinkLoop) is
+		// that every canvas.Refresh happens on the UI goroutine via doUI —
+		// setFontSettings can be called from any goroutine (e.g. a host
+		// app's own goroutine calling ApplyFontSettings), so that hop can't
+		// be skipped here either.
 		doUI(func() {
+			s.render.applyFontSettings(fs)
+
 			// s.cellW/cellH are the Session's own cached copy of the
 			// renderer's natural per-cell size (see their doc comment) —
 			// applyFontSettings just changed render.cellW/cellH (a new
@@ -235,6 +243,14 @@ func doUI(f func()) {
 var (
 	activeFontDBMu sync.Mutex
 	activeFontDB   *db.DB
+	// openWindowCount tracks how many terminal.Window instances (from either
+	// NewWindow or NewWindowFromSettings) are currently open — see
+	// windowOpened/windowClosed, called from window.go. Used only to decide
+	// when it's safe to drop activeFontDB/stop the debounce timer: doing
+	// that unconditionally on any single window's close would break
+	// Ctrl+scroll persistence for sibling windows still open against the
+	// same (or a different) db.
+	openWindowCount int
 
 	fontSizeSaveTimerMu sync.Mutex
 	fontSizeSaveTimer   *time.Timer
@@ -248,6 +264,36 @@ func setActiveFontDB(database *db.DB) {
 	activeFontDBMu.Lock()
 	activeFontDB = database
 	activeFontDBMu.Unlock()
+}
+
+// windowOpened/windowClosed bracket a terminal.Window's lifetime (called
+// from newWindow/its close intercept in window.go). Once the last open
+// window closes, there is no live Session left that could still trigger a
+// Ctrl+scroll save, so this drops activeFontDB and cancels any pending
+// debounce timer rather than leaving them referencing a db a fully torn
+// down app may have gone on to close.
+func windowOpened() {
+	activeFontDBMu.Lock()
+	openWindowCount++
+	activeFontDBMu.Unlock()
+}
+
+func windowClosed() {
+	activeFontDBMu.Lock()
+	openWindowCount--
+	last := openWindowCount <= 0
+	if last {
+		activeFontDB = nil
+	}
+	activeFontDBMu.Unlock()
+
+	if last {
+		fontSizeSaveTimerMu.Lock()
+		if fontSizeSaveTimer != nil {
+			fontSizeSaveTimer.Stop()
+		}
+		fontSizeSaveTimerMu.Unlock()
+	}
 }
 
 // scheduleFontSizeSave (re)starts a fontSizeSaveDebounce timer that writes
@@ -703,11 +749,22 @@ func (r *sessionRenderer) Layout(size fyne.Size) {
 	r.s.refreshCursor()
 }
 
-// MinSize reports the grid's natural pixel size so an unconstrained layout
-// shows the whole grid 1:1.
+// MinSize reports a single cell's pixel size — just enough that the widget
+// (and any window sized to fit it) can never collapse to zero, not the full
+// grid's natural size. Reporting the full grid here (cols*cellW x
+// rows*cellH) would tie MinSize to both the font settings and the current
+// column/row count: Fyne enforces a widget's/window's size can't shrink
+// below MinSize, so growing the font (or having more columns) would force
+// the window itself to grow to keep showing the same full grid — the
+// window frame must stay exactly where the user left it; a font-size
+// change should only change how many characters fit in that fixed pixel
+// area (see Resize/gridDims), never the area itself.
 func (r *sessionRenderer) MinSize() fyne.Size {
-	w, h := r.s.render.pixelSize()
-	return fyne.NewSize(float32(w), float32(h))
+	r.s.render.mu.Lock()
+	cellW := float64(r.s.render.cellW) * r.s.render.columnWidth
+	cellH := float64(r.s.render.cellH) * r.s.render.lineHeight
+	r.s.render.mu.Unlock()
+	return fyne.NewSize(float32(cellW), float32(cellH))
 }
 
 // Refresh repaints the grid image and cursor. It runs on the UI goroutine

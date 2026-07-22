@@ -147,6 +147,49 @@ func TestSessionReactsToLiveFontSettingsChange(t *testing.T) {
 	}
 }
 
+// TestSessionRendererMinSizeDoesNotScaleWithGridSize locks in the "the
+// window frame must never be forced to resize by a font-size change or a
+// bigger grid" contract: Fyne enforces a widget's/window's size can't
+// shrink below its renderer's MinSize, so if MinSize scaled with the full
+// grid (cols*cellW x rows*cellH), a live font-size increase — or simply
+// having more columns after the user resizes the window bigger — would
+// force the window itself to keep growing. MinSize must only be a small,
+// constant-per-font-size floor (one cell), never tied to the current
+// column/row count.
+func TestSessionRendererMinSizeDoesNotScaleWithGridSize(t *testing.T) {
+	test.NewApp()
+	defer setFontSettings(defaultFontSettings)
+
+	sess, err := NewSession(cmdDef("minsize-test"))
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer sess.Close()
+
+	r := sess.CreateRenderer()
+	before := r.MinSize()
+
+	// Growing the widget substantially grows the grid's column/row count
+	// (more characters fit), but must not change MinSize. Routed through
+	// doUI (fyne.Do), matching how Fyne's own layout system actually calls
+	// Resize on the UI goroutine — calling it directly from the test
+	// goroutine races with refreshLoop's own doUI-wrapped Refresh, which
+	// also touches the cursor rectangle Resize mutates.
+	doUI(func() { sess.Resize(fyne.NewSize(2000, 1500)) })
+	afterResize := r.MinSize()
+	if afterResize != before {
+		t.Errorf("MinSize changed after growing the grid via Resize: before=%v after=%v — MinSize must not scale with column/row count", before, afterResize)
+	}
+
+	// MinSize must still track a single cell's size, so it grows with the
+	// font itself (a real floor, not a value frozen at construction).
+	setFontSettings(FontSettings{Family: "", Size: 24, LineHeight: 1.0, ColumnWidth: 1.0})
+	afterFontChange := r.MinSize()
+	if afterFontChange.Width <= afterResize.Width || afterFontChange.Height <= afterResize.Height {
+		t.Errorf("MinSize did not grow with a larger font size: before=%v after=%v", afterResize, afterFontChange)
+	}
+}
+
 func TestCtrlScrollAdjustsFontSizeLiveAndClamps(t *testing.T) {
 	test.NewApp()
 	defer setFontSettings(defaultFontSettings) // restore for other tests

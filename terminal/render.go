@@ -183,10 +183,13 @@ func (r *gridRenderer) applyFontSettings(s FontSettings) {
 	r.refresh()
 }
 
-// pixelSize reports the natural pixel size of the current grid — including
-// the LineHeight/ColumnWidth multipliers (applyFontSettings) — used by the
-// widget renderer's MinSize/Layout so the on-screen raster maps 1:1 to the
-// rasterized cells before any scaling.
+// pixelSize reports the natural pixel size of the current grid — cols/rows
+// at the current per-cell size, including the LineHeight/ColumnWidth
+// multipliers (applyFontSettings). Exposed for tests that want to verify
+// the multiplier math directly; production code deliberately does not
+// derive the widget's MinSize from this (see sessionRenderer.MinSize's
+// doc comment in widget.go) so a font-size change can't force the window
+// frame itself to resize.
 func (r *gridRenderer) pixelSize() (w, h int) {
 	r.mu.Lock()
 	cellW := float64(r.cellW) * r.columnWidth

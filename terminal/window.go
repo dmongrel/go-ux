@@ -111,8 +111,10 @@ func newWindow(app fyne.App, shells []ShellDef, closeOnExit bool) (*Window, erro
 	win.SetContent(tv.tabs)
 	uiMu.Unlock()
 
+	windowOpened()
 	win.SetCloseIntercept(func() {
 		tv.closeAll()
+		windowClosed()
 		win.Close()
 	})
 

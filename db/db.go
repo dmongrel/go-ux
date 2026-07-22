@@ -47,8 +47,13 @@ type Property struct {
 type DB struct {
 	conn *sql.DB
 
-	mu        sync.Mutex
-	listeners map[int64][]func(values map[string]string)
+	mu             sync.Mutex
+	nextListenerID int
+	// listeners is keyed by nodeID, then by a per-subscription id (assigned
+	// by OnPropertiesChanged) — a map rather than a slice-with-holes so
+	// Unsubscribe actually reclaims memory instead of leaving a permanent
+	// nil hole behind for every unsubscribed listener.
+	listeners map[int64]map[int]func(values map[string]string)
 }
 
 // Open opens (creating if necessary) the SQLite database at path. path may be
@@ -58,7 +63,7 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DB{conn: conn, listeners: make(map[int64][]func(values map[string]string))}, nil
+	return &DB{conn: conn, listeners: make(map[int64]map[int]func(values map[string]string))}, nil
 }
 
 // Close closes the underlying database connection.
@@ -157,30 +162,34 @@ func (d *DB) SaveProperties(nodeID int64, values map[string]string) error {
 // window happens to be open on the same node.
 func (d *DB) OnPropertiesChanged(nodeID int64, fn func(values map[string]string)) (unsubscribe func()) {
 	d.mu.Lock()
-	d.listeners[nodeID] = append(d.listeners[nodeID], fn)
-	idx := len(d.listeners[nodeID]) - 1
+	id := d.nextListenerID
+	d.nextListenerID++
+	if d.listeners[nodeID] == nil {
+		d.listeners[nodeID] = make(map[int]func(values map[string]string))
+	}
+	d.listeners[nodeID][id] = fn
 	d.mu.Unlock()
 
 	return func() {
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		fns := d.listeners[nodeID]
-		if idx >= len(fns) || fns[idx] == nil {
-			return
+		delete(d.listeners[nodeID], id)
+		if len(d.listeners[nodeID]) == 0 {
+			delete(d.listeners, nodeID)
 		}
-		fns[idx] = nil // leave a hole rather than reslicing, so other subscribers' idx stay valid
 	}
 }
 
 func (d *DB) notifyPropertiesChanged(nodeID int64, values map[string]string) {
 	d.mu.Lock()
-	fns := append([]func(map[string]string){}, d.listeners[nodeID]...)
+	fns := make([]func(map[string]string), 0, len(d.listeners[nodeID]))
+	for _, fn := range d.listeners[nodeID] {
+		fns = append(fns, fn)
+	}
 	d.mu.Unlock()
 
 	for _, fn := range fns {
-		if fn != nil {
-			fn(values)
-		}
+		fn(values)
 	}
 }
 
