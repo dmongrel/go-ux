@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	fynetest "fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 
+	"go-ux/db"
 	"go-ux/settings"
 	"go-ux/test"
 )
@@ -215,5 +217,53 @@ func TestSearchExpandedBranchesArePersisted(t *testing.T) {
 	}
 	if !w2.TreeForTest().IsBranchOpen(vcsUID) {
 		t.Error("search-driven branch expansion was not persisted across reopen")
+	}
+}
+
+func TestPropertyFloatRendersValidatedEntry(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Float Node", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "ratio", "Ratio", db.PropertyFloat, "1.2", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	w, err := settings.NewWindow(app, d)
+	if err != nil {
+		t.Fatalf("NewWindow: %v", err)
+	}
+	// settings.Window has no public Close method and no other test in this
+	// file closes its Window either — no cleanup call needed here.
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	obj := w.PropertyWidgetForTest(nodeID, props[0])
+	entry, ok := obj.(*widget.Entry)
+	if !ok {
+		t.Fatalf("propertyWidget(PropertyFloat) = %T, want *widget.Entry", obj)
+	}
+	if entry.Text != "1.2" {
+		t.Errorf("entry.Text = %q, want %q", entry.Text, "1.2")
+	}
+	if entry.Validator == nil {
+		t.Fatal("entry.Validator is nil, want a float validator")
+	}
+	if err := entry.Validator("not-a-number"); err == nil {
+		t.Error("Validator(\"not-a-number\") = nil, want an error")
+	}
+	if err := entry.Validator("2.5"); err != nil {
+		t.Errorf("Validator(\"2.5\") = %v, want nil", err)
 	}
 }

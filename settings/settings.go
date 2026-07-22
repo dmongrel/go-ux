@@ -304,12 +304,29 @@ func (w *Window) propertyWidget(nodeID int64, p db.Property) fyne.CanvasObject {
 		sel.SetSelected(value)
 		return sel
 
+	case db.PropertyFloat:
+		entry := widget.NewEntry()
+		entry.SetText(value)
+		entry.Validator = func(s string) error {
+			_, err := strconv.ParseFloat(s, 64)
+			return err
+		}
+		entry.OnChanged = func(s string) { w.stage(nodeID, p.Key, s) }
+		return entry
+
 	default: // db.PropertyString and anything unrecognized
 		entry := widget.NewEntry()
 		entry.SetText(value)
 		entry.OnChanged = func(s string) { w.stage(nodeID, p.Key, s) }
 		return entry
 	}
+}
+
+// PropertyWidgetForTest exposes propertyWidget for settings_test's
+// external test package — this package has no other way to inspect a
+// generated form widget's type/validator from outside.
+func (w *Window) PropertyWidgetForTest(nodeID int64, p db.Property) fyne.CanvasObject {
+	return w.propertyWidget(nodeID, p)
 }
 
 // applySearch recomputes which tree nodes are visible/highlighted for a
