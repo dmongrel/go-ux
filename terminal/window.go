@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"fyne.io/fyne/v2"
+
+	"go-ux/db"
 )
 
 // defaultWindowWidth/Height are Window's starting size before any SetSize
@@ -18,10 +20,14 @@ const (
 // conventions — chainable SetSize, non-blocking Show — rather than
 // introducing a third pattern for a third go-ux window type.
 //
-// NewWindow takes shells directly (no *db.DB parameter). A db-aware
-// constructor that reads default_shell/close_on_exit from a settings
-// registry, the way settings.Window reads its own, is a later task's
-// addition layered on top of this one, not a replacement for it.
+// NewWindow takes shells directly (no *db.DB parameter) and remains the
+// base constructor. NewWindowFromSettings (settings_schema.go) is a second,
+// additional constructor that reads default_shell/close_on_exit from a
+// settings registry the way settings.Window reads its own — go-ux/dialog
+// already establishes the precedent of several named constructors
+// (NewInfo/NewError/NewCustom) for different construction needs rather than
+// threading optional parameters through one, so this package follows that
+// rather than inventing a third convention.
 type Window struct {
 	win fyne.Window
 	tv  *TabView
@@ -36,7 +42,62 @@ type Window struct {
 // for a future failure mode, e.g. an empty shells list with no db fallback)
 // without an incompatible signature change later.
 func NewWindow(app fyne.App, shells []ShellDef) (*Window, error) {
-	tv := NewTabView(shells)
+	return newWindow(app, shells, false)
+}
+
+// NewWindowFromSettings builds a terminal window like NewWindow, but sources
+// its default shell and close-on-exit behavior from database's settings
+// registry (as seeded by RegisterSettings) instead of a fixed []ShellDef.
+// It still calls DetectShells() itself for the actual list of runnable
+// shells on this machine — the registry only picks which of those is the
+// default (matched by name, for the "+" button and the initial tab order)
+// and whether a tab auto-closes when its shell process exits.
+//
+// If database has no Terminal node yet (RegisterSettings was never called),
+// this falls back to DetectShells()'s own ordering and close-on-exit off,
+// rather than failing — a caller that forgets to call RegisterSettings
+// first still gets a working window.
+func NewWindowFromSettings(app fyne.App, database *db.DB) (*Window, error) {
+	shells := DetectShells()
+
+	defaultShell, closeOnExit, found, err := readTerminalSettings(database)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		shells = withDefaultFirst(shells, defaultShell)
+	}
+
+	return newWindow(app, shells, found && closeOnExit)
+}
+
+// withDefaultFirst reorders shells so the entry named name is first (which
+// becomes TabView's default for its "+" button and the initially-selected
+// tab), leaving the relative order of the rest unchanged. Returns shells
+// unmodified if no entry matches name (e.g. the configured default_shell is
+// no longer detected on this machine).
+func withDefaultFirst(shells []ShellDef, name string) []ShellDef {
+	for i, s := range shells {
+		if s.Name != name {
+			continue
+		}
+		if i == 0 {
+			return shells
+		}
+		reordered := make([]ShellDef, 0, len(shells))
+		reordered = append(reordered, s)
+		reordered = append(reordered, shells[:i]...)
+		reordered = append(reordered, shells[i+1:]...)
+		return reordered
+	}
+	return shells
+}
+
+// newWindow is NewWindow plus the closeOnExit flag threaded down to
+// TabView — unexported since only NewWindow (closeOnExit always false) and
+// NewWindowFromSettings (closeOnExit from the registry) need to set it.
+func newWindow(app fyne.App, shells []ShellDef, closeOnExit bool) (*Window, error) {
+	tv := newTabView(shells, closeOnExit)
 
 	win := app.NewWindow("Terminal")
 	win.Resize(fyne.NewSize(defaultWindowWidth, defaultWindowHeight))

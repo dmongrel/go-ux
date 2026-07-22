@@ -30,6 +30,15 @@ type TabView struct {
 	defaultShell ShellDef
 	hasDefault   bool
 
+	// closeOnExit mirrors the close_on_exit settings property (see
+	// settings_schema.go): when true, every tab this TabView creates
+	// auto-closes as soon as its shell process exits, instead of leaving a
+	// dead tab sitting open. Set at construction time via newTabView so it
+	// applies uniformly to initial tabs and to ones later created through
+	// the "+" button (createTab) or AddTab — false (off) for plain
+	// NewTabView callers, who get NewWindow's pre-Task-4 behavior unchanged.
+	closeOnExit bool
+
 	mu     sync.Mutex // guards byItem, which callbacks below can touch from Fyne's own dispatch
 	byItem map[*container.TabItem]*Session
 }
@@ -39,8 +48,17 @@ type TabView struct {
 // caller can still add tabs via AddTab with an explicit ShellDef), just with
 // its "+" button doing nothing until AddTab is called at least once.
 func NewTabView(shells []ShellDef) *TabView {
+	return newTabView(shells, false)
+}
+
+// newTabView is NewTabView plus the closeOnExit flag — unexported because
+// only this package's own db-aware window constructor (NewWindowFromSettings,
+// see window.go) needs to set it; NewTabView's public signature stays
+// exactly as Task 3 produced it.
+func newTabView(shells []ShellDef, closeOnExit bool) *TabView {
 	t := &TabView{
-		byItem: make(map[*container.TabItem]*Session),
+		byItem:      make(map[*container.TabItem]*Session),
+		closeOnExit: closeOnExit,
 	}
 	if len(shells) > 0 {
 		t.defaultShell = shells[0]
@@ -143,6 +161,14 @@ func (t *TabView) newTabItem(def ShellDef) (*Session, *container.TabItem, error)
 	sess, err := NewSession(def)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if t.closeOnExit {
+		// OnExit's fn runs via fyne.Do (see widget.go), so CloseTab here —
+		// which touches DocTabs, a CanvasObject — is on the UI goroutine by
+		// the time it runs, same regime as every other exported TabView
+		// method.
+		sess.OnExit(func() { t.CloseTab(sess) })
 	}
 
 	item := container.NewTabItem(sess.Title(), sess)
