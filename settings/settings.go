@@ -67,6 +67,10 @@ type Window struct {
 	// staged holds in-memory edits, keyed by node ID then property key,
 	// not yet written to the db. Apply/OK flush it; Cancel discards it.
 	staged map[int64]map[string]string
+
+	// unsubscribers cancels every db.OnPropertiesChanged subscription this
+	// Window registered in NewWindow, called when the window closes.
+	unsubscribers []func()
 }
 
 // NewWindow builds a settings window backed by database. It reads the
@@ -84,6 +88,14 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 	w.indexNodes(nodes)
 	if err := w.prefetchProperties(); err != nil {
 		return nil, err
+	}
+
+	for uid, node := range w.byID {
+		nodeID := node.ID
+		unsubscribe := database.OnPropertiesChanged(nodeID, func(values map[string]string) {
+			fyne.Do(func() { w.acceptExternalChange(uid, nodeID, values) })
+		})
+		w.unsubscribers = append(w.unsubscribers, unsubscribe)
 	}
 
 	win := app.NewWindow("Settings")
@@ -130,6 +142,9 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 	tracker.Restore()
 	win.SetCloseIntercept(func() {
 		w.saveUIState()
+		for _, unsubscribe := range w.unsubscribers {
+			unsubscribe()
+		}
 		win.Close()
 	})
 
@@ -327,6 +342,36 @@ func (w *Window) propertyWidget(nodeID int64, p db.Property) fyne.CanvasObject {
 // generated form widget's type/validator from outside.
 func (w *Window) PropertyWidgetForTest(nodeID int64, p db.Property) fyne.CanvasObject {
 	return w.propertyWidget(nodeID, p)
+}
+
+// HandleOKForTest exposes handleOK for settings_test's external test
+// package.
+func (w *Window) HandleOKForTest() {
+	w.handleOK()
+}
+
+// acceptExternalChange reacts to a db write this Window didn't itself
+// make (see db.OnPropertiesChanged) — force-accepting it means updating
+// the cached Property.Value so it's correct even before next rendered, and
+// discarding any staged-but-uncommitted edit for that same key, so a
+// later OK/Apply can't overwrite the newer external value with a stale one.
+// Runs on the UI goroutine (the caller wraps it in fyne.Do) since it
+// touches formHolder when uid is the currently displayed page.
+func (w *Window) acceptExternalChange(uid string, nodeID int64, values map[string]string) {
+	props := w.allProps[uid]
+	for key, value := range values {
+		for i := range props {
+			if props[i].Key == key {
+				props[i].Value = value
+			}
+		}
+		if w.staged[nodeID] != nil {
+			delete(w.staged[nodeID], key)
+		}
+	}
+	if uid == w.selectedUID {
+		w.renderProperties(uid)
+	}
 }
 
 // applySearch recomputes which tree nodes are visible/highlighted for a

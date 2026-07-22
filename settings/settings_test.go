@@ -267,3 +267,51 @@ func TestPropertyFloatRendersValidatedEntry(t *testing.T) {
 		t.Errorf("Validator(\"2.5\") = %v, want nil", err)
 	}
 }
+
+func TestExternalWriteForceAcceptsOverStaleStagedEdit(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Force Accept Node", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "size", "Size", db.PropertyInt, "13", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	app := fynetest.NewApp()
+	defer app.Quit()
+
+	w, err := settings.NewWindow(app, d)
+	if err != nil {
+		t.Fatalf("NewWindow: %v", err)
+	}
+
+	// User types a value in the dialog (staged, not yet committed).
+	props, _ := d.GetProperties(nodeID)
+	obj := w.PropertyWidgetForTest(nodeID, props[0])
+	entry := obj.(*widget.Entry)
+	entry.SetText("20")
+
+	// An external write happens (e.g. terminal's Ctrl+scroll) — bypasses
+	// the dialog's own staging entirely.
+	if err := d.SaveProperties(nodeID, map[string]string{"size": "15"}); err != nil {
+		t.Fatalf("SaveProperties (external): %v", err)
+	}
+
+	// The dialog's own control for that property must now show/use 15, not
+	// the user's stale staged 20 — and OK must persist 15, not 20.
+	w.HandleOKForTest()
+
+	final, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties (final): %v", err)
+	}
+	if final[0].Value != "15" {
+		t.Errorf("final size = %q, want %q (external write must win over stale staged edit)", final[0].Value, "15")
+	}
+}
