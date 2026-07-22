@@ -110,6 +110,62 @@ func fontDisplayName(regName string) string {
 	return regName
 }
 
+// loadSystemFontFile finds family among the system/per-user font registry
+// keys (the same ones scanFontRegistryKey enumerates) and returns its raw
+// file bytes. ok is false if no matching display name is found or its file
+// can't be read — loadMonospaceFace (render.go) treats that as "fall back
+// to the bundled font", not an error.
+func loadSystemFontFile(family string) (data []byte, ok bool) {
+	winDir := os.Getenv("SystemRoot")
+	if winDir == "" {
+		winDir = `C:\Windows`
+	}
+	fontsDir := filepath.Join(winDir, "Fonts")
+
+	find := func(root registry.Key, path string, resolvePath func(string) string) (string, bool) {
+		key, err := registry.OpenKey(root, path, registry.QUERY_VALUE)
+		if err != nil {
+			return "", false
+		}
+		defer key.Close()
+
+		valueNames, err := key.ReadValueNames(-1)
+		if err != nil {
+			return "", false
+		}
+		for _, regName := range valueNames {
+			if fontDisplayName(regName) != family {
+				continue
+			}
+			file, _, err := key.GetStringValue(regName)
+			if err != nil || file == "" {
+				continue
+			}
+			return resolvePath(file), true
+		}
+		return "", false
+	}
+
+	if path, found := find(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts`,
+		func(file string) string {
+			if filepath.IsAbs(file) {
+				return file
+			}
+			return filepath.Join(fontsDir, file)
+		}); found {
+		if data, err := os.ReadFile(path); err == nil {
+			return data, true
+		}
+	}
+	if path, found := find(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Fonts`,
+		func(file string) string { return file }); found {
+		if data, err := os.ReadFile(path); err == nil {
+			return data, true
+		}
+	}
+	return nil, false
+}
+
 // isMonospaceFontFile reports whether the font file at path has a fixed
 // glyph advance width across a representative sample of ASCII letters,
 // digits, and punctuation. Any parse failure (missing file, unsupported
