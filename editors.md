@@ -9,12 +9,12 @@ a diff for human review.
 
 **Current state (this document):** the layout/interaction shell — tab bar,
 split/move-pane menus, resize bars, persisted layout — plus a real,
-editable, Document-backed content area with line numbers and a soft-wrap
-toggle (see "Documents and editing" below). No file I/O (content is seeded
-in memory by the caller, not loaded from disk), no diff review, no
-markdown preview, no font settings, and no file watching yet — those are
-deferred to later phases so the interaction surface could be verified
-independently first.
+editable, Document-backed content area with line numbers, a soft-wrap
+toggle, and Ctrl+scroll font sizing (see "Documents and editing" and "Font
+settings" below). No file I/O (content is seeded in memory by the caller,
+not loaded from disk), no diff review, no markdown preview, and no file
+watching yet — those are deferred to later phases so the interaction
+surface could be verified independently first.
 
 ## Public API
 
@@ -170,12 +170,31 @@ pre-opened tabs — it also demonstrates layout persistence: run it, split/
 move some tabs around, close it, and run it again against the same db file
 to see the layout come back exactly as it was left.
 
+## Font settings
+
+Each `Group` gets its own independent, Ctrl+scroll-adjustable font size —
+scroll while holding Ctrl over any pane's content area to grow/shrink it.
+This reuses `go-ux/fontsettings` (extracted from `go-ux/terminal`'s
+original font-settings mechanism, generalized into a per-instance
+`*fontsettings.State` rather than one value shared by every open thing
+everywhere). Unlike `terminal`, which rasterizes its own glyphs onto a
+canvas, the content area is a native `widget.Entry`, so applying a font
+size doesn't need any font *loading* — it's done via a
+`container.NewThemeOverride` that overrides `theme.SizeNameText` from the
+live `*fontsettings.State`.
+
+Font size is **not yet persisted** — it resets to the default on every
+`NewGroup`/`NewGroupFromSettings` call. There's no `editors` settings-tree
+node yet (the way `terminal/settings_schema.go` registers one for
+`terminal`), so there's nowhere to save it to. A later phase should add
+that, mirroring `terminal`'s `RegisterSettings`/`ApplyFontSettings` pattern
+using `fontsettings.SeedFontProperties`/`ReadFontProperties`.
+
 ## Deferred (not yet built)
 
-Markdown preview (via goldmark); font settings (a shared
-`Ctrl+scroll`-adjustable font-size pattern reused from `go-ux/terminal`,
-factored into a new shared `fontsettings` package); file I/O (loading from
-/ saving to disk) and file watching (via `fsnotify`, auto-load or notify on
-external changes); and diff review (via `go-difflib`) plus an external API
-for a host app's own AI-assistant tooling to propose edits. All designed
-but not yet implemented.
+Markdown preview (via goldmark); file I/O (loading from / saving to disk)
+and file watching (via `fsnotify`, auto-load or notify on external
+changes); diff review (via `go-difflib`) plus an external API for a host
+app's own AI-assistant tooling to propose edits; and persisting the font
+size setting (see "Font settings" above). All designed but not yet
+implemented.
