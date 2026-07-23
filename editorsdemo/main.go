@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -39,14 +40,20 @@ var dbPath = filepath.Join(os.TempDir(), "go-ux-editorsdemo.sqlite")
 // caller-chosen id.
 const groupID = "editorsdemo.main"
 
-// loremIpsum is placeholder body text for the seeded demo tabs — three
-// paragraphs, long enough to exercise wrapping/scrolling behavior in the
-// content area once Phase 2 adds a real text backend.
-const loremIpsum = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+// loremIpsumParagraphs is placeholder body text for the seeded demo tabs —
+// three paragraphs, long enough to exercise wrapping/scrolling behavior in
+// the content area once Phase 2 adds a real text backend.
+const loremIpsumParagraphs = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
 
 Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus, at velit vehicula viverra. Nullam vitae congue lorem. Aliquam pharetra libero non ipsum congue, in tincidunt neque tincidunt. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae.
 
 Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.`
+
+// loremIpsum repeats loremIpsumParagraphs several times over — a single
+// pass of the three paragraphs turned out too short to reliably overflow
+// the content area's viewport, which is the whole point of this
+// placeholder text (exercising scrollbars/growth behavior).
+var loremIpsum = strings.Repeat(loremIpsumParagraphs+"\n\n", 5)
 
 func main() {
 	database, err := db.Open(dbPath)
