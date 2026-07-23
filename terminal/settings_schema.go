@@ -1,8 +1,6 @@
 package terminal
 
 import (
-	"strconv"
-
 	"go-ux/db"
 	"go-ux/fontsettings"
 )
@@ -22,17 +20,17 @@ const terminalSettingsLabel = "Terminal"
 const (
 	KeyDefaultShell = "default_shell"
 	KeyCloseOnExit  = "close_on_exit"
-	KeyFontFamily   = "font_family"
-	KeyFontSize     = "font_size"
-	KeyLineHeight   = "line_height"
-	KeyColumnWidth  = "column_width"
+	KeyFontFamily   = fontsettings.KeyFontFamily
+	KeyFontSize     = fontsettings.KeyFontSize
+	KeyLineHeight   = fontsettings.KeyLineHeight
+	KeyColumnWidth  = fontsettings.KeyColumnWidth
 )
 
 // fontFamilyDefault is the sentinel font_family value meaning "use the
 // bundled font" — DetectMonospaceFonts() never returns this string itself
 // (it only lists real installed font names), so it can't collide with a
 // genuine family name.
-const fontFamilyDefault = "(default)"
+const fontFamilyDefault = fontsettings.FamilyDefault
 
 // RegisterSettings seeds a root "Terminal" node with default_shell
 // (PropertyEnum, options from DetectShells()) and close_on_exit
@@ -75,17 +73,7 @@ func RegisterSettings(database *db.DB) error {
 		return err
 	}
 
-	fontOptions := append([]string{fontFamilyDefault}, fontsettings.DetectMonospaceFonts()...)
-	if err := database.AddProperty(nodeID, KeyFontFamily, "Font", db.PropertyEnum, fontFamilyDefault, fontOptions); err != nil {
-		return err
-	}
-	if err := database.AddProperty(nodeID, KeyFontSize, "Font size", db.PropertyInt, "13", nil); err != nil {
-		return err
-	}
-	if err := database.AddProperty(nodeID, KeyLineHeight, "Line height", db.PropertyFloat, "1.0", nil); err != nil {
-		return err
-	}
-	if err := database.AddProperty(nodeID, KeyColumnWidth, "Column width", db.PropertyFloat, "1.0", nil); err != nil {
+	if err := fontsettings.SeedFontProperties(database, nodeID, fontsettings.DetectMonospaceFonts(), defaultFontSettings); err != nil {
 		return err
 	}
 	return nil
@@ -113,32 +101,15 @@ func readTerminalSettings(database *db.DB) (defaultShell string, closeOnExit boo
 	}
 
 	closeOnExit = true // matches RegisterSettings' seeded default
-	font = defaultFontSettings
 	for _, p := range props {
 		switch p.Key {
 		case KeyDefaultShell:
 			defaultShell = p.Value
 		case KeyCloseOnExit:
 			closeOnExit = p.Value == "true"
-		case KeyFontFamily:
-			if p.Value != fontFamilyDefault {
-				font.Family = p.Value
-			}
-		case KeyFontSize:
-			if v, err := strconv.Atoi(p.Value); err == nil {
-				font.Size = v
-			}
-		case KeyLineHeight:
-			if v, err := strconv.ParseFloat(p.Value, 64); err == nil {
-				font.LineHeight = v
-			}
-		case KeyColumnWidth:
-			if v, err := strconv.ParseFloat(p.Value, 64); err == nil {
-				font.ColumnWidth = v
-			}
 		}
 	}
-	font = clampFontSettings(font)
+	font = fontsettings.ReadFontProperties(props, defaultFontSettings)
 	return defaultShell, closeOnExit, font, true, nil
 }
 
