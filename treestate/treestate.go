@@ -64,6 +64,15 @@ type state struct {
 // before it's shown; call the returned Tracker's Restore once the tree is
 // attached to its window/container.
 func Track(database *db.DB, id string, tree *widget.Tree, opts Options) *Tracker {
+	if opts.Exists == nil {
+		// Exists is documented as required, but a nil check here turns a
+		// caller's mistake into "treat every persisted UID as valid"
+		// (Restore's stale-skip simply never triggers) instead of a
+		// nil-pointer panic the first time Restore runs — friendlier for a
+		// second, unfamiliar consumer of this package than a crash deep
+		// inside Restore's replay loop.
+		opts.Exists = func(string) bool { return true }
+	}
 	t := &Tracker{
 		database: database,
 		id:       id,

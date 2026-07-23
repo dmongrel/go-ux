@@ -27,11 +27,15 @@ blob via `database.SaveUIState(id, blob)` — the same generic, arbitrary-ID
 opaque-blob store any `go-ux` component's own UI state uses (see `db.md`).
 There's no explicit `Save` call and no debounce.
 
-`opts.Exists` is required: it reports whether a given tree node UID is
+`opts.Exists` should be set: it reports whether a given tree node UID is
 still valid in the tree's *current* data. `Restore` uses it to filter out
 stale references — a UID that was expanded/selected in a previous session
 but no longer exists (e.g. the underlying data changed) is silently
-skipped, with no fallback selection.
+skipped, with no fallback selection. Leaving it nil is safe (`Track`
+defaults it to "every UID is valid") but disables that stale-reference
+filtering entirely, so a deleted node's old selection could be replayed
+against a tree that no longer has it — set it if your tree's node set can
+ever shrink.
 
 `opts.OnSelected`/`OnBranchOpened`/`OnBranchClosed` are optional
 pass-throughs: `Track` persists first, then calls these (if set), so a
