@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS ui_state (
 	blob         BLOB NOT NULL,
 	updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS editors_panes (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	group_id     TEXT NOT NULL,
+	parent_pane  INTEGER NULL REFERENCES editors_panes(id),
+	is_pane      INTEGER NOT NULL,
+	axis         TEXT NOT NULL DEFAULT '',
+	split_offset REAL NOT NULL DEFAULT 0.5,
+	sort_order   INTEGER NOT NULL DEFAULT 0,
+	is_primary   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS editors_tabs (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	group_id   TEXT NOT NULL,
+	pane_id    INTEGER NOT NULL REFERENCES editors_panes(id),
+	file_path  TEXT NOT NULL,
+	tab_order  INTEGER NOT NULL DEFAULT 0,
+	is_active  INTEGER NOT NULL DEFAULT 0
+);
 `
 
 // Open opens (creating if necessary) the SQLite database at path and applies the schema.
