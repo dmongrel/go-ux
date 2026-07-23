@@ -60,13 +60,15 @@ func NewWindow(app fyne.App, shells []ShellDef) (*Window, error) {
 func NewWindowFromSettings(app fyne.App, database *db.DB) (*Window, error) {
 	shells := DetectShells()
 
-	defaultShell, closeOnExit, found, err := readTerminalSettings(database)
+	defaultShell, closeOnExit, font, found, err := readTerminalSettings(database)
 	if err != nil {
 		return nil, err
 	}
 	if found {
 		shells = withDefaultFirst(shells, defaultShell)
+		setFontSettings(font)
 	}
+	setActiveFontDB(database)
 
 	return newWindow(app, shells, found && closeOnExit)
 }
@@ -109,8 +111,10 @@ func newWindow(app fyne.App, shells []ShellDef, closeOnExit bool) (*Window, erro
 	win.SetContent(tv.tabs)
 	uiMu.Unlock()
 
+	windowOpened()
 	win.SetCloseIntercept(func() {
 		tv.closeAll()
+		windowClosed()
 		win.Close()
 	})
 

@@ -21,7 +21,7 @@ func TestGridDims(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			cols, rows := gridDims(c.w, c.h, c.cellW, c.cellH)
+			cols, rows := gridDims(c.w, c.h, c.cellW, c.cellH, 1.0, 1.0)
 			if cols != c.wantCols || rows != c.wantRows {
 				t.Errorf("gridDims(%d,%d,%d,%d) = %dx%d, want %dx%d",
 					c.w, c.h, c.cellW, c.cellH, cols, rows, c.wantCols, c.wantRows)

@@ -95,3 +95,35 @@ func TestGridRendererCellSizePositive(t *testing.T) {
 		t.Errorf("ascent = %d, want in (0, cellH=%d]", r.ascent, r.cellH)
 	}
 }
+
+func TestGridRendererAppliesLineHeightAndColumnWidthMultipliers(t *testing.T) {
+	v := newVTState(10, 5)
+	r := newGridRenderer(v)
+
+	baseW, baseH := r.pixelSize()
+
+	r.applyFontSettings(FontSettings{Family: "", Size: 13, LineHeight: 2.0, ColumnWidth: 1.5})
+
+	gotW, gotH := r.pixelSize()
+	wantW := int(float64(baseW) * 1.5)
+	wantH := int(float64(baseH) * 2.0)
+	if gotW != wantW {
+		t.Errorf("pixelSize width after ColumnWidth=1.5 = %d, want %d", gotW, wantW)
+	}
+	if gotH != wantH {
+		t.Errorf("pixelSize height after LineHeight=2.0 = %d, want %d", gotH, wantH)
+	}
+}
+
+func TestPaintUsesMultipliedCellSize(t *testing.T) {
+	v := newVTState(4, 2)
+	r := newGridRenderer(v)
+	r.applyFontSettings(FontSettings{Family: "", Size: 13, LineHeight: 1.0, ColumnWidth: 2.0})
+
+	wantW, wantH := r.pixelSize()
+	img := r.raster.Generator(wantW, wantH)
+	b := img.Bounds()
+	if b.Dx() != wantW || b.Dy() != wantH {
+		t.Errorf("painted image = %dx%d, want %dx%d (pixelSize after ColumnWidth=2.0)", b.Dx(), b.Dy(), wantW, wantH)
+	}
+}

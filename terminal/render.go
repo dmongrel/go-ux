@@ -38,10 +38,17 @@ const (
 type gridRenderer struct {
 	state *vtState
 
-	face   xfont.Face
+	face xfont.Face
+	// cellW/cellH are the natural per-cell size from the loaded face,
+	// before lineHeight/columnWidth multipliers — see pixelSize and paint.
 	cellW  int
 	cellH  int
 	ascent int // baseline offset from the cell's top, in pixels
+
+	// lineHeight/columnWidth are the multipliers applied on top of
+	// cellW/cellH — see paint's use of them and applyFontSettings.
+	lineHeight  float64
+	columnWidth float64
 
 	mu  sync.Mutex // guards img against concurrent refresh + raster generate
 	img *image.RGBA
@@ -55,8 +62,10 @@ type gridRenderer struct {
 // while resize()/refresh() may run there too, all three take the same
 // mutex.
 func newGridRenderer(state *vtState) *gridRenderer {
-	r := &gridRenderer{state: state}
-	r.face, r.cellW, r.cellH, r.ascent = loadMonospaceFace(float64(defaultCellHeight))
+	r := &gridRenderer{state: state, lineHeight: 1.0, columnWidth: 1.0}
+	s := currentFontSettings()
+	r.face, r.cellW, r.cellH, r.ascent = loadMonospaceFace(s.Family, float64(s.Size))
+	r.lineHeight, r.columnWidth = s.LineHeight, s.ColumnWidth
 
 	r.raster = canvas.NewRaster(r.paint)
 	// Nearest-neighbor keeps the hand-rasterized glyphs crisp rather than
@@ -161,49 +170,91 @@ func (r *gridRenderer) resize(cols, rows int) {
 	r.refresh()
 }
 
-// pixelSize reports the natural pixel size of the current grid, used by the
-// widget renderer's MinSize/Layout so the on-screen raster maps 1:1 to the
-// rasterized cells before any scaling.
-func (r *gridRenderer) pixelSize() (w, h int) {
-	cols, rows := r.state.size()
-	return cols * r.cellW, rows * r.cellH
+// applyFontSettings reloads the font face (if Family/Size changed) and
+// updates the line-height/column-width multipliers, then repaints. Called
+// once at construction (via currentFontSettings(), above) and again
+// whenever the shared FontSettings changes.
+func (r *gridRenderer) applyFontSettings(s FontSettings) {
+	r.mu.Lock()
+	r.face, r.cellW, r.cellH, r.ascent = loadMonospaceFace(s.Family, float64(s.Size))
+	r.lineHeight, r.columnWidth = s.LineHeight, s.ColumnWidth
+	r.mu.Unlock()
+
+	r.refresh()
 }
 
-// loadMonospaceFace loads Fyne's bundled monospace font at the given pixel
-// size and reports the resulting fixed cell box and baseline. It falls back
-// to golang.org/x/image/font/basicfont (a fixed 7x13 bitmap face, always
-// available, pure Go, already in the module graph) if the bundled resource
-// can't be parsed — so rendering can never fail to produce *some* legible
-// grid, which matters because a crash here would take down the whole widget.
-//
-// Using the bundled resource keeps the "no new font dependency" constraint
-// from the design doc; opentype parsing lives in golang.org/x/image, already
-// pulled in transitively by Fyne, so nothing new is added to go.mod.
-func loadMonospaceFace(sizePx float64) (face xfont.Face, cellW, cellH, ascent int) {
+// pixelSize reports the natural pixel size of the current grid — cols/rows
+// at the current per-cell size, including the LineHeight/ColumnWidth
+// multipliers (applyFontSettings). Exposed for tests that want to verify
+// the multiplier math directly; production code deliberately does not
+// derive the widget's MinSize from this (see sessionRenderer.MinSize's
+// doc comment in widget.go) so a font-size change can't force the window
+// frame itself to resize.
+func (r *gridRenderer) pixelSize() (w, h int) {
+	r.mu.Lock()
+	cellW := float64(r.cellW) * r.columnWidth
+	cellH := float64(r.cellH) * r.lineHeight
+	r.mu.Unlock()
+
+	cols, rows := r.state.size()
+	return int(float64(cols) * cellW), int(float64(rows) * cellH)
+}
+
+// loadMonospaceFace loads the named font family at the given pixel size and
+// reports the resulting fixed cell box and baseline. family == "" loads
+// Fyne's bundled monospace font (this package's original, still-default
+// behavior); a non-empty family is looked up the same way
+// DetectMonospaceFonts (font_windows.go) found it, by scanning the Windows
+// font registry for a matching display name. Any failure at any step —
+// unknown family, a file that no longer exists, a parse error — falls back
+// to the bundled font, then to golang.org/x/image/font/basicfont if even
+// that fails to parse, so rendering can never fail to produce *some*
+// legible grid.
+func loadMonospaceFace(family string, sizePx float64) (face xfont.Face, cellW, cellH, ascent int) {
+	if family != "" {
+		if data, ok := loadSystemFontFile(family); ok {
+			if fnt, err := opentype.Parse(data); err == nil {
+				if f, cw, ch, asc, ok := faceMetrics(fnt, sizePx); ok {
+					return f, cw, ch, asc
+				}
+			}
+		}
+	}
+
 	res := theme.DefaultTextMonospaceFont()
 	fnt, err := opentype.Parse(res.Content())
 	if err == nil {
-		f, ferr := opentype.NewFace(fnt, &opentype.FaceOptions{
-			Size:    sizePx,
-			DPI:     72, // 1 point == 1 pixel, so Size is effectively in pixels
-			Hinting: xfont.HintingFull,
-		})
-		if ferr == nil {
-			m := f.Metrics()
-			// Advance of a representative glyph gives the monospace cell
-			// width; 'M' is a safe wide-ish choice present in any font.
-			adv, ok := f.GlyphAdvance('M')
-			if ok && adv > 0 {
-				cellW = adv.Ceil()
-				cellH = (m.Ascent + m.Descent).Ceil()
-				return f, max(cellW, 1), max(cellH, 1), m.Ascent.Ceil()
-			}
+		if f, cw, ch, asc, ok := faceMetrics(fnt, sizePx); ok {
+			return f, cw, ch, asc
 		}
 	}
 
 	// Fallback: fixed bitmap face with known metrics.
 	bf := basicfont.Face7x13
 	return bf, defaultCellWidth, defaultCellHeight, bf.Ascent
+}
+
+// faceMetrics builds a face from fnt at sizePx and reports its cell box —
+// factored out of loadMonospaceFace so both the system-font and
+// bundled-font paths share the same "measure via GlyphAdvance('M')" logic.
+// ok is false if the face can't be built or can't report a usable advance.
+func faceMetrics(fnt *opentype.Font, sizePx float64) (face xfont.Face, cellW, cellH, ascent int, ok bool) {
+	f, err := opentype.NewFace(fnt, &opentype.FaceOptions{
+		Size:    sizePx,
+		DPI:     72, // 1 point == 1 pixel, so Size is effectively in pixels
+		Hinting: xfont.HintingFull,
+	})
+	if err != nil {
+		return nil, 0, 0, 0, false
+	}
+	m := f.Metrics()
+	adv, advOK := f.GlyphAdvance('M')
+	if !advOK || adv <= 0 {
+		return nil, 0, 0, 0, false
+	}
+	cellW = adv.Ceil()
+	cellH = (m.Ascent + m.Descent).Ceil()
+	return f, max(cellW, 1), max(cellH, 1), m.Ascent.Ceil(), true
 }
 
 // paletteColor maps a vt10x.Color to an RGBA. vt10x encodes colors in three

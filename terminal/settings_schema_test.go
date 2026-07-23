@@ -45,8 +45,8 @@ func TestRegisterSettingsCreatesTerminalNodeWithProperties(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProperties: %v", err)
 	}
-	if len(props) != 2 {
-		t.Fatalf("len(props) = %d, want 2 (%+v)", len(props), props)
+	if len(props) != 6 {
+		t.Fatalf("len(props) = %d, want 6 (default_shell, close_on_exit, font_family, font_size, line_height, column_width) (%+v)", len(props), props)
 	}
 
 	byKey := make(map[string]db.Property, len(props))
@@ -125,6 +125,106 @@ func TestRegisterSettingsIsIdempotent(t *testing.T) {
 	}
 	if len(propsAfter) != len(propsBefore) {
 		t.Fatalf("len(props) after 2nd call = %d, want unchanged %d", len(propsAfter), len(propsBefore))
+	}
+}
+
+func TestRegisterSettingsSeedsFontProperties(t *testing.T) {
+	d := newTestDB(t)
+
+	if err := RegisterSettings(d); err != nil {
+		t.Fatalf("RegisterSettings: %v", err)
+	}
+
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	node, ok := findRootNode(nodes, terminalSettingsLabel)
+	if !ok {
+		t.Fatal("Terminal node not found")
+	}
+	props, err := d.GetProperties(node.ID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+
+	byKey := make(map[string]db.Property)
+	for _, p := range props {
+		byKey[p.Key] = p
+	}
+
+	fontFamily, ok := byKey[KeyFontFamily]
+	if !ok {
+		t.Fatal("font_family property not seeded")
+	}
+	if fontFamily.Value != "(default)" {
+		t.Errorf("font_family default = %q, want %q", fontFamily.Value, "(default)")
+	}
+	if fontFamily.Type != db.PropertyEnum {
+		t.Errorf("font_family type = %q, want %q", fontFamily.Type, db.PropertyEnum)
+	}
+	found := false
+	for _, opt := range fontFamily.EnumOptions {
+		if opt == "(default)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("font_family enum options missing \"(default)\" sentinel")
+	}
+
+	fontSize, ok := byKey[KeyFontSize]
+	if !ok || fontSize.Value != "13" || fontSize.Type != db.PropertyInt {
+		t.Errorf("font_size = %+v, want value \"13\" type PropertyInt", fontSize)
+	}
+
+	lineHeight, ok := byKey[KeyLineHeight]
+	if !ok || lineHeight.Value != "1.0" || lineHeight.Type != db.PropertyFloat {
+		t.Errorf("line_height = %+v, want value \"1.0\" type PropertyFloat", lineHeight)
+	}
+
+	columnWidth, ok := byKey[KeyColumnWidth]
+	if !ok || columnWidth.Value != "1.0" || columnWidth.Type != db.PropertyFloat {
+		t.Errorf("column_width = %+v, want value \"1.0\" type PropertyFloat", columnWidth)
+	}
+}
+
+func TestApplyFontSettingsPushesDbValuesIntoLiveState(t *testing.T) {
+	defer setFontSettings(defaultFontSettings) // restore for other tests
+
+	d := newTestDB(t)
+
+	if err := RegisterSettings(d); err != nil {
+		t.Fatalf("RegisterSettings: %v", err)
+	}
+	nodes, _ := d.ListSettings()
+	node, _ := findRootNode(nodes, terminalSettingsLabel)
+
+	if err := d.SaveProperties(node.ID, map[string]string{
+		KeyFontSize:   "18",
+		KeyLineHeight: "1.4",
+	}); err != nil {
+		t.Fatalf("SaveProperties: %v", err)
+	}
+
+	if err := ApplyFontSettings(d); err != nil {
+		t.Fatalf("ApplyFontSettings: %v", err)
+	}
+
+	got := currentFontSettings()
+	if got.Size != 18 {
+		t.Errorf("currentFontSettings().Size = %d, want 18", got.Size)
+	}
+	if got.LineHeight != 1.4 {
+		t.Errorf("currentFontSettings().LineHeight = %v, want 1.4", got.LineHeight)
+	}
+}
+
+func TestApplyFontSettingsNoTerminalNodeIsNotAnError(t *testing.T) {
+	d := newTestDB(t)
+
+	if err := ApplyFontSettings(d); err != nil {
+		t.Errorf("ApplyFontSettings (no Terminal node): %v, want nil", err)
 	}
 }
 

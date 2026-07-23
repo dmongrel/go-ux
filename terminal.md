@@ -40,6 +40,8 @@ func (w *Window) SetSize(width, height float32) *Window
 func (w *Window) Show()
 
 func RegisterSettings(database *db.DB) error
+func ApplyFontSettings(database *db.DB) error
+func DetectMonospaceFonts() []string
 ```
 
 `DetectShells` probes the current machine for runnable shells — PowerShell
@@ -97,11 +99,32 @@ ordering and close-on-exit off, rather than failing.
 chainable override (both `width` and `height` must be positive or it's a
 no-op), `Show` is non-blocking.
 
-`RegisterSettings` seeds a root "Terminal" node with two properties
-(`default_shell` — `PropertyEnum`, options from `DetectShells()`;
-`close_on_exit` — `PropertyBool`, default `"true"`) in `database`'s registry,
-if one isn't already present (idempotent — safe on every app startup, same
-as `test.SeedExample`'s role for `test_settings.go`).
+`RegisterSettings` seeds a root "Terminal" node with `default_shell`
+(`PropertyEnum`, options from `DetectShells()`), `close_on_exit`
+(`PropertyBool`, default `"true"`), and four font properties — `font_family`
+(`PropertyEnum`, options from `DetectMonospaceFonts()` plus a `"(default)"`
+sentinel meaning the bundled font, which is also the seeded default),
+`font_size` (`PropertyInt`, default `13`), `line_height` and `column_width`
+(`PropertyFloat`, both default `1.0`, multipliers of the font's natural
+per-cell size) — in `database`'s registry, if one isn't already present
+(idempotent — safe on every app startup, same as `test.SeedExample`'s role
+for `test_settings.go`).
+
+`ApplyFontSettings(database *db.DB) error` re-reads those four font
+properties and pushes them into the live, process-wide font state every
+open `Session` renders against — `NewWindowFromSettings` calls it once at
+construction; a host app calls it again after a Settings-window OK/Apply
+commits new font values, so open terminal windows pick up the change
+without needing to be reopened. Ctrl+scrollwheel over any `Session` also
+adjusts font size live (2pt per tick, clamped 8–36pt) across every open
+session at once, debounce-persisting to whichever database
+`NewWindowFromSettings` was last called with (nothing persists if no
+`NewWindowFromSettings` call has been made at all — matches `Window`'s
+existing "the db registry is optional" design).
+
+`DetectMonospaceFonts() []string` mirrors `DetectShells()`'s shape: probes
+installed fonts (system-wide and per-user) for genuinely monospace ones,
+returning only their names, gracefully empty on any enumeration failure.
 
 ## Minimal usage
 
