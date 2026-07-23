@@ -79,6 +79,8 @@ type editorEntry struct {
 	fonts         *fontsettings.State
 	forwardScroll func(*fyne.ScrollEvent)
 	onSave        func()
+	onNextTab     func()
+	onPrevTab     func()
 }
 
 func newEditorEntry(fonts *fontsettings.State, forwardScroll func(*fyne.ScrollEvent)) *editorEntry {
@@ -145,18 +147,32 @@ func (e *editorEntry) Scrolled(ev *fyne.ScrollEvent) {
 	e.fonts.Set(current)
 }
 
-// TypedShortcut intercepts Ctrl+S (Fyne has no built-in "Save" shortcut
-// constant — the driver reports any unrecognized modifier+key combo, this
-// one included, as a *desktop.CustomShortcut, which widget.Entry's own
-// TypedShortcut just ignores since nothing is registered for it) to call
-// onSave, otherwise delegates to Entry's own TypedShortcut so
+// TypedShortcut intercepts Ctrl+S/Ctrl+PageDown/Ctrl+PageUp (Fyne has no
+// built-in shortcut constants for any of these — the driver reports any
+// unrecognized modifier+key combo as a *desktop.CustomShortcut, which
+// widget.Entry's own TypedShortcut just ignores since nothing is
+// registered for them) to call onSave/onNextTab/onPrevTab respectively,
+// otherwise delegates to Entry's own TypedShortcut so
 // Undo/Redo/Cut/Copy/Paste/Select-all keep working unchanged.
 func (e *editorEntry) TypedShortcut(shortcut fyne.Shortcut) {
-	if cs, ok := shortcut.(*desktop.CustomShortcut); ok && cs.KeyName == fyne.KeyS && cs.Modifier == fyne.KeyModifierControl {
-		if e.onSave != nil {
-			e.onSave()
+	if cs, ok := shortcut.(*desktop.CustomShortcut); ok && cs.Modifier == fyne.KeyModifierControl {
+		switch cs.KeyName {
+		case fyne.KeyS:
+			if e.onSave != nil {
+				e.onSave()
+			}
+			return
+		case fyne.KeyPageDown:
+			if e.onNextTab != nil {
+				e.onNextTab()
+			}
+			return
+		case fyne.KeyPageUp:
+			if e.onPrevTab != nil {
+				e.onPrevTab()
+			}
+			return
 		}
-		return
 	}
 	e.Entry.TypedShortcut(shortcut)
 }

@@ -95,6 +95,31 @@ func (p *Pane) selectTab(tab *Tab) {
 	}
 }
 
+// selectAdjacentTab moves the active tab by delta positions within
+// p.tabs, wrapping around — Ctrl+PageDown/Ctrl+PageUp's handler
+// (font.go's editorEntry.TypedShortcut, wired via
+// documentContentCallbacks in rebuildCenterContent), for cycling through
+// a Pane's open tabs without leaving the content area to click a tab
+// chip. A no-op if there are fewer than 2 tabs (nothing to cycle to) or
+// no active tab.
+func (p *Pane) selectAdjacentTab(delta int) {
+	if len(p.tabs) < 2 || p.active == nil {
+		return
+	}
+	idx := -1
+	for i, t := range p.tabs {
+		if t == p.active {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return
+	}
+	next := (idx + delta + len(p.tabs)) % len(p.tabs)
+	p.selectTab(p.tabs[next])
+}
+
 // setActive sets tab as this Pane's active tab and redraws the center
 // content, and the tab bar's chip strip + highlight, to match. Internal —
 // callers that also need to persist or notify do so themselves after
@@ -143,13 +168,17 @@ func (p *Pane) rebuildCenterContent() {
 	}
 
 	tab := p.active
-	content, cleanup := newDocumentContent(tab, p, p.fonts, func() {
-		if p.group == nil {
-			return
-		}
-		if err := p.group.SaveTab(tab); err != nil {
-			log.Printf("editors: save %s: %v", tab.FilePath, err)
-		}
+	content, cleanup := newDocumentContent(tab, p, p.fonts, documentContentCallbacks{
+		onSave: func() {
+			if p.group == nil {
+				return
+			}
+			if err := p.group.SaveTab(tab); err != nil {
+				log.Printf("editors: save %s: %v", tab.FilePath, err)
+			}
+		},
+		onNextTab: func() { p.selectAdjacentTab(1) },
+		onPrevTab: func() { p.selectAdjacentTab(-1) },
 	})
 	p.center.Objects = []fyne.CanvasObject{content}
 

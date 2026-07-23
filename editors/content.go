@@ -12,25 +12,45 @@ import (
 	"go-ux/fontsettings"
 )
 
+// documentContentCallbacks bundles the host-driven actions
+// newDocumentContent's editable widget can trigger via keyboard
+// shortcuts (font.go's editorEntry.TypedShortcut), so the constructor
+// doesn't grow an ever-longer positional parameter list as more get
+// added — pane.go's rebuildCenterContent builds one of these per content
+// rebuild, closing over the Pane and Tab it's for.
+type documentContentCallbacks struct {
+	// onSave fires on Ctrl+S.
+	onSave func()
+	// onNextTab/onPrevTab fire on Ctrl+PageDown/Ctrl+PageUp — cycling
+	// through the Pane's open tabs without leaving the content area to
+	// click a tab chip (matches the same shortcut browsers and editors
+	// like VS Code use for tab cycling).
+	onNextTab func()
+	onPrevTab func()
+}
+
 // newDocumentContent builds a Pane's center content area for tab: an
 // editable, multi-line text widget bound to tab.Doc, kept in sync with any
 // other Pane showing the same Document (split.go's "same underlying
 // document, synced live" split semantics), Ctrl+scroll-adjustable in font
-// size via fonts (font.go), Ctrl+S wired to onSave. key identifies the
+// size via fonts (font.go), with callbacks wired to their respective
+// keyboard shortcuts (see documentContentCallbacks). key identifies the
 // caller (see Document.RegisterListener/fontsettings.State.RegisterListener)
 // — pane.go passes its own *Pane, since only one content widget is live
 // per Pane at a time. Callers MUST call the returned cleanup func when
 // this content is no longer shown (e.g. the active tab changes), or the
 // Document/font state will keep pushing updates into an orphaned widget
 // indefinitely.
-func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State, onSave func()) (content fyne.CanvasObject, cleanup func()) {
+func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State, callbacks documentContentCallbacks) (content fyne.CanvasObject, cleanup func()) {
 	var scroll *container.Scroll
 	entry := newEditorEntry(fonts, func(ev *fyne.ScrollEvent) {
 		if scroll != nil {
 			scroll.Scrolled(ev)
 		}
 	})
-	entry.onSave = onSave
+	entry.onSave = callbacks.onSave
+	entry.onNextTab = callbacks.onNextTab
+	entry.onPrevTab = callbacks.onPrevTab
 	entry.Wrapping = fyne.TextWrapWord
 	entry.SetText(tab.Doc.Text())
 

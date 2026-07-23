@@ -99,6 +99,51 @@ func TestEditorEntryOtherShortcutsStillDelegateToEntry(t *testing.T) {
 	}
 }
 
+func TestEditorEntryCtrlPageDownTriggersOnNextTab(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	called := false
+	entry.onNextTab = func() { called = true }
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyPageDown, Modifier: fyne.KeyModifierControl})
+
+	if !called {
+		t.Errorf("onNextTab did not fire for Ctrl+PageDown")
+	}
+}
+
+func TestEditorEntryCtrlPageUpTriggersOnPrevTab(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	called := false
+	entry.onPrevTab = func() { called = true }
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyPageUp, Modifier: fyne.KeyModifierControl})
+
+	if !called {
+		t.Errorf("onPrevTab did not fire for Ctrl+PageUp")
+	}
+}
+
+func TestEditorEntryPlainPageDownDoesNotTriggerOnNextTab(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	called := false
+	entry.onNextTab = func() { called = true }
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyPageDown, Modifier: 0})
+
+	if called {
+		t.Errorf("onNextTab fired for plain PageDown (no Ctrl), want only Ctrl+PageDown to trigger it")
+	}
+}
+
 // TestEditorEntryMouseDownAcquiresRealFocus is a regression test for a
 // real user-reported bug: typing and pasting into the content area did
 // nothing at all. Root cause: newEditorEntry built its *widget.Entry via

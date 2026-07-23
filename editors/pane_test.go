@@ -254,6 +254,101 @@ func TestPaneTabBarShowsDirtyIndicatorAndClearsOnSave(t *testing.T) {
 	}
 }
 
+func TestPaneSelectAdjacentTabCyclesForwardAndWraps(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tabA := NewTab("a", "a.md", "", "")
+	tabB := NewTab("b", "b.md", "", "")
+	tabC := NewTab("c", "c.md", "", "")
+	p.AddTab(tabA)
+	p.AddTab(tabB)
+	p.AddTab(tabC)
+	p.setActive(tabA)
+
+	p.selectAdjacentTab(1)
+	if p.active != tabB {
+		t.Fatalf("active = %v, want tabB", p.active)
+	}
+
+	p.selectAdjacentTab(1)
+	if p.active != tabC {
+		t.Fatalf("active = %v, want tabC", p.active)
+	}
+
+	p.selectAdjacentTab(1) // wraps past the end back to the start
+	if p.active != tabA {
+		t.Fatalf("active = %v, want tabA (wrapped)", p.active)
+	}
+}
+
+func TestPaneSelectAdjacentTabBackwardWraps(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tabA := NewTab("a", "a.md", "", "")
+	tabB := NewTab("b", "b.md", "", "")
+	p.AddTab(tabA)
+	p.AddTab(tabB)
+	p.setActive(tabA)
+
+	p.selectAdjacentTab(-1) // wraps backward past the start to the end
+
+	if p.active != tabB {
+		t.Fatalf("active = %v, want tabB (wrapped backward)", p.active)
+	}
+}
+
+func TestPaneSelectAdjacentTabWithOneTabIsNoOp(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tab := NewTab("t1", "chapter1.md", "", "")
+	p.AddTab(tab)
+
+	p.selectAdjacentTab(1)
+
+	if p.active != tab {
+		t.Fatalf("active = %v, want unchanged tab (only one open)", p.active)
+	}
+}
+
+func TestPaneSelectAdjacentTabWithNoTabsIsNoOp(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+
+	p.selectAdjacentTab(1) // must not panic
+
+	if p.active != nil {
+		t.Fatalf("active = %v, want nil", p.active)
+	}
+}
+
+func TestPaneContentCtrlPageDownCyclesTabs(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	tabA := NewTab("a", "a.md", "", "")
+	tabB := NewTab("b", "b.md", "", "")
+	g.AddTab(tabA)
+	g.AddTab(tabB)
+	g.primary.setActive(tabA)
+
+	override := g.primary.center.Objects[0].(*container.ThemeOverride)
+	stack := override.Content.(*fyne.Container)
+	scroll := stack.Objects[1].(*container.Scroll)
+	row := scroll.Content.(*fyne.Container)
+	entry := row.Objects[0].(*editorEntry)
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyPageDown, Modifier: fyne.KeyModifierControl})
+
+	if g.primary.active != tabB {
+		t.Fatalf("active = %v, want tabB after Ctrl+PageDown", g.primary.active)
+	}
+}
+
 func TestPaneCloseLastTabOnPrimaryLeavesItEmpty(t *testing.T) {
 	fynetest.NewApp()
 
