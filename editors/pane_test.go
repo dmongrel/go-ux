@@ -28,6 +28,33 @@ func TestPaneAddTabSetsActiveAndUpdatesContent(t *testing.T) {
 	}
 }
 
+// TestPaneAddTabSyncsTabBarTabs is a regression test for a real bug found
+// via manual testing (go run ./editorsdemo showed only a bare label, no
+// tab bar at all): AddTab updated p.tabs and p.tabBar.Active but never
+// p.tabBar.Tabs, so TabBar always rendered zero chips regardless of how
+// many tabs were actually open. Unit tests for Pane and TabBar in
+// isolation both missed this because neither one exercises the wiring
+// between them that AddTab is responsible for.
+func TestPaneAddTabSyncsTabBarTabs(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tabA := NewTab("a", "a.md", "", "")
+	tabB := NewTab("b", "b.md", "", "")
+	tabC := NewTab("c", "c.md", "", "")
+
+	p.AddTab(tabA)
+	p.AddTab(tabB)
+	p.AddTab(tabC)
+
+	if len(p.tabBar.Tabs) != 3 {
+		t.Fatalf("tabBar.Tabs has %d entries after 3 AddTab calls, want 3 (tab bar would render with no chips otherwise)", len(p.tabBar.Tabs))
+	}
+	if p.tabBar.Tabs[0] != tabA || p.tabBar.Tabs[1] != tabB || p.tabBar.Tabs[2] != tabC {
+		t.Fatalf("tabBar.Tabs = %v, want [tabA, tabB, tabC] in order", p.tabBar.Tabs)
+	}
+}
+
 func TestPaneCloseTabRemovesAndPicksNeighbor(t *testing.T) {
 	fynetest.NewApp()
 

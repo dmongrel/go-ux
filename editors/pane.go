@@ -71,10 +71,18 @@ func (p *Pane) selectTab(tab *Tab) {
 	}
 }
 
-// setActive sets tab as this Pane's active tab and redraws both the
-// center content and the tab bar's highlight to match. Internal — callers
-// that also need to persist or notify do so themselves after calling this
-// (see AddTab/selectTab).
+// setActive sets tab as this Pane's active tab and redraws the center
+// content, and the tab bar's chip strip + highlight, to match. Internal —
+// callers that also need to persist or notify do so themselves after
+// calling this (see AddTab/selectTab).
+//
+// Also syncs p.tabBar.Tabs = p.tabs every time, not just Active — AddTab
+// and selectTab never touch p.tabBar.Tabs themselves (only
+// removeTabLocally's callers, closeTabRequested/movePane, used to do that
+// explicitly), so without this the tab bar's chip strip stayed
+// permanently empty after every AddTab: the bar rendered zero chips (no
+// visible height), leaving only the center content visible — exactly the
+// "just a window with a label, no tab bar" symptom this fixes.
 func (p *Pane) setActive(tab *Tab) {
 	p.active = tab
 	if tab != nil {
@@ -83,6 +91,7 @@ func (p *Pane) setActive(tab *Tab) {
 		p.center.Objects = nil
 	}
 	p.center.Refresh()
+	p.tabBar.Tabs = p.tabs
 	p.tabBar.Active = tab
 	p.tabBar.Refresh()
 }
