@@ -27,28 +27,24 @@ blob via `database.SaveUIState(id, blob)` — the same generic, arbitrary-ID
 opaque-blob store any `go-ux` component's own UI state uses (see `db.md`).
 There's no explicit `Save` call and no debounce.
 
-`opts.Exists` should be set: it reports whether a given tree node UID is
-still valid in the tree's *current* data. `Restore` uses it to filter out
-stale references — a UID that was expanded/selected in a previous session
-but no longer exists (e.g. the underlying data changed) is silently
-skipped, with no fallback selection. Leaving it nil is safe (`Track`
-defaults it to "every UID is valid") but disables that stale-reference
-filtering entirely, so a deleted node's old selection could be replayed
-against a tree that no longer has it — set it if your tree's node set can
-ever shrink.
-
-`opts.OnSelected`/`OnBranchOpened`/`OnBranchClosed` are optional
-pass-throughs: `Track` persists first, then calls these (if set), so a
-caller's own reaction to tree events (e.g. rendering a properties pane)
-keeps working exactly as if it had set the tree's callbacks directly. These
-also fire during `Restore`'s replay — e.g. a caller using `OnSelected` to
-render a properties pane will see it render for whatever node `Restore`
-found persisted as selected.
-
 `id` is caller-chosen and must be unique per tree instance you want tracked
 independently — e.g. `"myapp.settings.tree"` for one tree,
 `"myapp.projectExplorer.tree"` for another; nothing enforces uniqueness,
 duplicate IDs simply share (and clobber each other's) persisted state.
+
+### `Options` field reference
+
+| Field            | Required? | Purpose                                                                 | If omitted (nil)                                                                 |
+|-------------------|-----------|--------------------------------------------------------------------------|------------------------------------------------------------------------------------|
+| `Exists`          | Should be set | Reports whether a UID is still valid in the tree's *current* data. `Restore` uses it to drop stale persisted references (a node deleted since last session) — no error, no fallback selection. | Safe: `Track` defaults it to "every UID is valid," which disables stale-reference filtering. A deleted node's old selection could then be replayed against a tree that no longer has it. Set it if your tree's node set can ever shrink. |
+| `OnSelected`      | Optional  | Called after persisting a selection — put your existing "render details for this node" logic here. Also fires during `Restore`'s replay, so the last-selected node's details render automatically on reopen. | No pass-through call happens; persistence itself still works. |
+| `OnBranchOpened`  | Optional  | Called after persisting a branch open. Also fires during `Restore`'s replay. | No pass-through call happens; persistence itself still works. |
+| `OnBranchClosed`  | Optional  | Called after persisting a branch close.                                  | No pass-through call happens; persistence itself still works. |
+
+`Track`/`Restore` are the only two calls needed — there is no `Save`,
+`Unsubscribe`, or `Close` method. `Track` takes over the tree's callback
+fields for the tree's lifetime; there's currently no way to detach a
+`Tracker` from its tree once created (no consumer has needed it yet).
 
 ## Minimal usage
 
@@ -69,6 +65,33 @@ tracker := treestate.Track(database, "myapp.explorer.tree", tree, treestate.Opti
 
 tracker.Restore() // after the tree is populated and visible
 ```
+
+## Works identically in a dedicated window or embedded in a host app
+
+`Track`/`Restore` only ever touch the `*widget.Tree` and the `*db.DB` you
+pass in — nothing about `treestate` knows or cares whether that tree lives
+in its own `fyne.Window` (like `go-ux/settings.Window` does) or is embedded
+as one panel inside a larger host application's existing window (a project
+tree in the sidebar of an IDE-style app, for instance). There is no
+`Window` type in this package's API at all.
+
+Concretely, this means:
+
+- **Standalone window** (e.g. `settings.Window`'s pattern): build the tree,
+  call `Track`, attach the tree to the window's content, call
+  `win.Show()`, then call `tracker.Restore()`. See `settings/settings.go`'s
+  `NewWindow` for the exact call order.
+- **Embedded in a host app's own window**: identical — build the tree,
+  call `Track`, add the tree to whatever `fyne.Container` the host is
+  already assembling (a `container.Border`, a tab, a split pane, ...),
+  then call `tracker.Restore()` once that container is part of the host's
+  visible content. No `go-ux` `Window` wrapper is required or expected.
+
+The only thing that matters for correctness in either case is *ordering*:
+`Track` before the tree is shown (so no toggle/selection is missed), and
+`Restore` after the tree has real data and is attached to whatever
+container will display it (so `OpenBranch`/`Select` have something
+meaningful to act on).
 
 ## Fyne gotcha this package works around for callers
 
