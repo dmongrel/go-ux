@@ -11,6 +11,26 @@ import (
 	"go-ux/fontsettings"
 )
 
+// TestEditorEntrySelectAllShortcutSelectsEverything checks that Ctrl+A
+// selects the entry's full text. widget.Entry already registers
+// fyne.ShortcutSelectAll internally (registerShortcut, called from its
+// own ExtendBaseWidget override, which editorEntry's embedding promotes
+// unchanged) — this just confirms that plumbing survives editorEntry's
+// wrapping (and the requestFocus fix above) rather than assuming it.
+func TestEditorEntrySelectAllShortcutSelectsEverything(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	entry.SetText("hello world")
+
+	entry.TypedShortcut(&fyne.ShortcutSelectAll{})
+
+	if got := entry.SelectedText(); got != "hello world" {
+		t.Errorf("SelectedText() = %q, want %q", got, "hello world")
+	}
+}
+
 // TestEditorEntryMouseDownAcquiresRealFocus is a regression test for a
 // real user-reported bug: typing and pasting into the content area did
 // nothing at all. Root cause: newEditorEntry built its *widget.Entry via
