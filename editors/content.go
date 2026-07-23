@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
 	"go-ux/fontsettings"
 )
@@ -72,6 +73,21 @@ func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State, onSave fun
 		tab.Doc.UnregisterListener(key)
 		themeCleanup()
 	}
+}
+
+// newEmptyPaneContent builds the placeholder shown in a Pane's center area
+// when it has no open tabs (a freshly created primary Pane, or one whose
+// last tab was just closed) — previously just blank space. editors itself
+// has no file picker of its own (see mcptooling.go's OpenFile doc
+// comment — that's deliberately the host app's job), so this is
+// intentionally just a neutral, muted message and not an actionable
+// button.
+func newEmptyPaneContent() fyne.CanvasObject {
+	style := widget.RichTextStyleParagraph
+	style.Alignment = fyne.TextAlignCenter
+	style.ColorName = theme.ColorNamePlaceHolder
+	text := widget.NewRichText(&widget.TextSegment{Text: "No file open", Style: style})
+	return container.NewCenter(text)
 }
 
 // darkenedContentBackground returns the current theme's background color,

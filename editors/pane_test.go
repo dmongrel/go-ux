@@ -10,6 +10,19 @@ import (
 	fynetest "fyne.io/fyne/v2/test"
 )
 
+func TestNewPaneWithNoTabsShowsEmptyPlaceholder(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+
+	if len(p.center.Objects) != 1 {
+		t.Fatalf("center.Objects has %d entries, want 1 (the empty-pane placeholder)", len(p.center.Objects))
+	}
+	if _, ok := p.center.Objects[0].(*fyne.Container); !ok {
+		t.Fatalf("center.Objects[0] is %T, want *fyne.Container (container.NewCenter)", p.center.Objects[0])
+	}
+}
+
 func TestPaneAddTabSetsActiveAndUpdatesContent(t *testing.T) {
 	fynetest.NewApp()
 
@@ -256,7 +269,7 @@ func TestPaneCloseLastTabOnPrimaryLeavesItEmpty(t *testing.T) {
 	if p.active != nil {
 		t.Fatalf("active = %v, want nil", p.active)
 	}
-	if len(p.center.Objects) != 0 {
-		t.Fatalf("center.Objects has %d entries, want 0", len(p.center.Objects))
+	if len(p.center.Objects) != 1 {
+		t.Fatalf("center.Objects has %d entries, want 1 (the empty-pane placeholder)", len(p.center.Objects))
 	}
 }

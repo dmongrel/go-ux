@@ -64,6 +64,7 @@ func newPane(group *Group, id string, isPrimary bool) *Pane {
 	p.southBar = NewSouthBar()
 	p.center = container.NewStack()
 	p.ExtendBaseWidget(p)
+	p.rebuildCenterContent() // shows the empty-pane placeholder immediately, not just after a tab is added and later closed
 	return p
 }
 
@@ -129,7 +130,7 @@ func (p *Pane) setActive(tab *Tab) {
 // togglePreview) — it does not touch tabBar.
 func (p *Pane) rebuildCenterContent() {
 	if p.active == nil {
-		p.center.Objects = nil
+		p.center.Objects = []fyne.CanvasObject{newEmptyPaneContent()}
 		p.center.Refresh()
 		return
 	}
