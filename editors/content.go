@@ -24,6 +24,8 @@ func newDocumentContent(tab *Tab, key any) (content fyne.CanvasObject, cleanup f
 	entry.Wrapping = fyne.TextWrapWord
 	entry.SetText(tab.Doc.Text())
 
+	sidebar := newGutter(tab.Doc.Text(), entry)
+
 	// updating guards against Entry.SetText (driven by a Document
 	// notification below) re-firing OnChanged back into Document.SetText —
 	// Document.SetText's own no-op guard (see document.go) already breaks
@@ -32,6 +34,7 @@ func newDocumentContent(tab *Tab, key any) (content fyne.CanvasObject, cleanup f
 	// start of the text on every keystroke.
 	updating := false
 	entry.OnChanged = func(text string) {
+		sidebar.SetText(text)
 		if updating {
 			return
 		}
@@ -45,10 +48,13 @@ func newDocumentContent(tab *Tab, key any) (content fyne.CanvasObject, cleanup f
 		updating = true
 		entry.SetText(text)
 		updating = false
+		sidebar.SetText(text)
 	})
 
+	row := container.NewBorder(nil, nil, sidebar, nil, entry)
+
 	bg := canvas.NewRectangle(darkenedContentBackground())
-	stack := container.NewStack(bg, container.NewScroll(entry))
+	stack := container.NewStack(bg, container.NewScroll(row))
 	return stack, func() { tab.Doc.UnregisterListener(key) }
 }
 

@@ -11,7 +11,7 @@ import (
 	fynetest "fyne.io/fyne/v2/test"
 )
 
-func newDocumentContentEntry(t *testing.T, tab *Tab, key any) (*widget.Entry, func()) {
+func newDocumentContentParts(t *testing.T, tab *Tab, key any) (entry *widget.Entry, sidebar *gutter, cleanup func()) {
 	t.Helper()
 	obj, cleanup := newDocumentContent(tab, key)
 	stack, ok := obj.(*fyne.Container)
@@ -22,10 +22,24 @@ func newDocumentContentEntry(t *testing.T, tab *Tab, key any) (*widget.Entry, fu
 	if !ok {
 		t.Fatalf("stack.Objects[1] is %T, want *container.Scroll", stack.Objects[1])
 	}
-	entry, ok := scroll.Content.(*widget.Entry)
+	row, ok := scroll.Content.(*fyne.Container)
 	if !ok {
-		t.Fatalf("scroll content is %T, want *widget.Entry", scroll.Content)
+		t.Fatalf("scroll content is %T, want *fyne.Container (Border)", scroll.Content)
 	}
+	entry, ok = row.Objects[0].(*widget.Entry)
+	if !ok {
+		t.Fatalf("row.Objects[0] is %T, want *widget.Entry", row.Objects[0])
+	}
+	sidebar, ok = row.Objects[1].(*gutter)
+	if !ok {
+		t.Fatalf("row.Objects[1] is %T, want *gutter", row.Objects[1])
+	}
+	return entry, sidebar, cleanup
+}
+
+func newDocumentContentEntry(t *testing.T, tab *Tab, key any) (*widget.Entry, func()) {
+	t.Helper()
+	entry, _, cleanup := newDocumentContentParts(t, tab, key)
 	return entry, cleanup
 }
 
@@ -100,6 +114,32 @@ func TestNewDocumentContentCleanupStopsFurtherUpdates(t *testing.T) {
 
 	if entry.Text == "changed after cleanup" {
 		t.Errorf("entry still received an update after cleanup was called")
+	}
+}
+
+func TestNewDocumentContentGutterShowsLineNumbers(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "line one\nline two\nline three")
+	_, sidebar, cleanup := newDocumentContentParts(t, tab, "key1")
+	defer cleanup()
+
+	if sidebar.label.Text != "1\n2\n3" {
+		t.Errorf("gutter text = %q, want %q", sidebar.label.Text, "1\n2\n3")
+	}
+}
+
+func TestNewDocumentContentGutterUpdatesAsTextChanges(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "one line")
+	entry, sidebar, cleanup := newDocumentContentParts(t, tab, "key1")
+	defer cleanup()
+
+	entry.SetText("one\ntwo\nthree\nfour")
+
+	if sidebar.label.Text != "1\n2\n3\n4" {
+		t.Errorf("gutter text = %q, want %q", sidebar.label.Text, "1\n2\n3\n4")
 	}
 }
 
