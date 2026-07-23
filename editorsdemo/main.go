@@ -1,10 +1,13 @@
 // Command editorsdemo is a manual/visual entry point for go-ux/editors: a
 // window embedding one editors.Group, pre-opened with 4 tabs (3 plain-text
-// placeholders plus one real Markdown file), so the tab bar, right-click
-// split/move menus, resize-bar dragging, live editing, Ctrl+scroll font
-// sizing, Markdown preview toggle, and persisted layout can all be
-// exercised by hand. No file I/O, diff review, or file watching yet. Run
-// with `go run ./editorsdemo`.
+// placeholders plus one real Markdown file), plus an "Open File..." button
+// (this demo's own, since editors.Group.OpenFile has no picker UI of its
+// own) so the tab bar, right-click split/move menus, resize-bar dragging,
+// live editing, Ctrl+scroll font sizing, Ctrl+S save, Markdown preview
+// toggle, opening arbitrary files, file watching, and persisted layout can
+// all be exercised by hand. Diff review (ProposeDiff) isn't wired to any
+// UI here yet — it's meant to be driven by a host app's own AI tooling,
+// not a manual demo action. Run with `go run ./editorsdemo`.
 //
 // It lives in its own directory rather than at the repo root, for the
 // same one-`package main`-per-directory reason as dialogdemo/terminaldemo
@@ -24,6 +27,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/widget"
 
 	"go-ux/db"
 	"go-ux/editors"
@@ -118,7 +124,31 @@ func main() {
 	}
 
 	win := fyneApp.NewWindow("Editors Demo")
-	win.SetContent(group)
+
+	// A file-open button — group.OpenFile itself is a plain Go API with no
+	// picker UI of its own (by design: the editors package leaves file
+	// choosing to the host app, see editors.md's "Diff review
+	// (mcp_tooling)" section), so this demo needs to supply one to let
+	// OpenFile actually be exercised by hand rather than only from Go code.
+	openBtn := widget.NewButton("Open File...", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+			if reader == nil {
+				return // user cancelled
+			}
+			defer reader.Close()
+
+			path := reader.URI().Path()
+			if _, err := group.OpenFile(path); err != nil {
+				dialog.ShowError(err, win)
+			}
+		}, win)
+	})
+
+	win.SetContent(container.NewBorder(openBtn, nil, nil, nil, group))
 	win.Resize(fyne.NewSize(1024, 700))
 	win.Show()
 
