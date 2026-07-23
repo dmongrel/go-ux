@@ -39,6 +39,15 @@ var dbPath = filepath.Join(os.TempDir(), "go-ux-editorsdemo.sqlite")
 // caller-chosen id.
 const groupID = "editorsdemo.main"
 
+// loremIpsum is placeholder body text for the seeded demo tabs — three
+// paragraphs, long enough to exercise wrapping/scrolling behavior in the
+// content area once Phase 2 adds a real text backend.
+const loremIpsum = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
+
+Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Curabitur pretium tincidunt lacus, at velit vehicula viverra. Nullam vitae congue lorem. Aliquam pharetra libero non ipsum congue, in tincidunt neque tincidunt. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae.
+
+Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt.`
+
 func main() {
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -63,9 +72,9 @@ func main() {
 	// many tabs, however split) is what NewGroupFromSettings already
 	// restored, and re-seeding here would just add 3 more on top of that.
 	if existingPanes, _, loadErr := database.LoadEditorLayout(groupID); loadErr == nil && len(existingPanes) == 0 {
-		group.AddTab(editors.NewTab("tab-1", "Tab 1", "tab-1.txt", "First placeholder tab.\n\nRight-click the tab bar to try Split Right / Split Down / Move Right / Move Down."))
-		group.AddTab(editors.NewTab("tab-2", "Tab 2", "tab-2.txt", "Second placeholder tab — some dummy body text.\n\nThis is a novel-writing-style paragraph of placeholder prose, long enough to show word wrap in the (currently read-only) content area."))
-		group.AddTab(editors.NewTab("tab-3", "Tab 3", "tab-3.txt", "Third placeholder tab."))
+		group.AddTab(editors.NewTab("tab-1", "Tab 1", "tab-1.txt", loremIpsum))
+		group.AddTab(editors.NewTab("tab-2", "Tab 2", "tab-2.txt", loremIpsum))
+		group.AddTab(editors.NewTab("tab-3", "Tab 3", "tab-3.txt", loremIpsum))
 	}
 
 	win := fyneApp.NewWindow("Editors Demo")
