@@ -1,10 +1,10 @@
-// Command editorsdemo is a manual/visual entry point for go-ux/editors'
-// Phase 1 layout shell: a window embedding one editors.Group, pre-opened
-// with 3 placeholder tabs, so the tab bar, right-click split/move menus,
-// resize-bar dragging, and persisted layout can all be exercised by hand
-// before the deeper backend (real text editing, diff review, markdown
-// preview, font settings, file watching) exists. Run with
-// `go run ./editorsdemo`.
+// Command editorsdemo is a manual/visual entry point for go-ux/editors: a
+// window embedding one editors.Group, pre-opened with 4 tabs (3 plain-text
+// placeholders plus one real Markdown file), so the tab bar, right-click
+// split/move menus, resize-bar dragging, live editing, Ctrl+scroll font
+// sizing, Markdown preview toggle, and persisted layout can all be
+// exercised by hand. No file I/O, diff review, or file watching yet. Run
+// with `go run ./editorsdemo`.
 //
 // It lives in its own directory rather than at the repo root, for the
 // same one-`package main`-per-directory reason as dialogdemo/terminaldemo
@@ -55,6 +55,32 @@ Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium dolor
 // placeholder text (exercising scrollbars/growth behavior).
 var loremIpsum = strings.Repeat(loremIpsumParagraphs+"\n\n", 5)
 
+// markdownDemoText is seeded into tab-4.md (a real .md FilePath) so the
+// tab bar's Preview/Edit toggle button — hidden for the other, plain-text
+// tabs — has something to actually toggle in this demo.
+const markdownDemoText = `# Chapter One
+
+This is a **bold** claim, and this is *italicized* prose. Here is some ` + "`inline code`" + ` for good measure.
+
+## A Sub-Heading
+
+- first item
+- second item
+- third item
+
+> A blockquote, for a character's aside.
+
+` + "```" + `
+fmt.Println("a fenced code block")
+` + "```" + `
+
+See [the go-ux repo](https://github.com/) for more.
+
+---
+
+Text after a thematic break.
+`
+
 func main() {
 	database, err := db.Open(dbPath)
 	if err != nil {
@@ -82,6 +108,7 @@ func main() {
 		group.AddTab(editors.NewTab("tab-1", "Tab 1", "tab-1.txt", loremIpsum))
 		group.AddTab(editors.NewTab("tab-2", "Tab 2", "tab-2.txt", loremIpsum))
 		group.AddTab(editors.NewTab("tab-3", "Tab 3", "tab-3.txt", loremIpsum))
+		group.AddTab(editors.NewTab("tab-4", "Chapter One.md", "tab-4.md", markdownDemoText))
 	}
 
 	win := fyneApp.NewWindow("Editors Demo")
