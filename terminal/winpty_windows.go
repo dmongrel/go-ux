@@ -5,6 +5,7 @@ package terminal
 import (
 	"embed"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -367,7 +368,7 @@ func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
 	// slower than expected. Doing the same kick pty4j does, before spawning
 	// the child rather than relying on the widget's first Fyne layout pass
 	// to trigger it, fixes that at its source.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		var sizeErrPtr uintptr
 		ok, _, _ := procSetSize.Call(wp, uintptr(cols), uintptr(rows), uintptr(unsafe.Pointer(&sizeErrPtr)))
 		_ = winptyErr("winpty_set_size", &sizeErrPtr)
@@ -481,13 +482,11 @@ func buildWinptyEnvBlock(overrides map[string]string) (*uint16, error) {
 
 	merged := make(map[string]string)
 	for _, kv := range os.Environ() {
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			merged[kv[:i]] = kv[i+1:]
+		if before, after, ok := strings.Cut(kv, "="); ok {
+			merged[before] = after
 		}
 	}
-	for k, v := range overrides {
-		merged[k] = v
-	}
+	maps.Copy(merged, overrides)
 
 	keys := make([]string, 0, len(merged))
 	for k := range merged {
@@ -662,14 +661,15 @@ func commandLine(def ShellDef) string {
 	if hasSpace(path) {
 		path = `"` + path + `"`
 	}
-	cmd := path
+	var cmd strings.Builder
+	cmd.WriteString(path)
 	for _, a := range def.Args {
 		if hasSpace(a) {
 			a = `"` + a + `"`
 		}
-		cmd += " " + a
+		cmd.WriteString(" " + a)
 	}
-	return cmd
+	return cmd.String()
 }
 
 func hasSpace(s string) bool {

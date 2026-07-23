@@ -210,7 +210,7 @@ func TestCtrlScrollAdjustsFontSizeLiveAndClamps(t *testing.T) {
 	}
 
 	// Clamp: many ticks shouldn't exceed maxFontSize.
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		sess.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}})
 	}
 	if got := currentFontSettings().Size; got != maxFontSize {
@@ -243,7 +243,7 @@ func TestCtrlScrollDebouncedSavePersistsAfterIdle(t *testing.T) {
 	defer sess.Close()
 
 	sess.KeyDown(&fyne.KeyEvent{Name: desktop.KeyControlLeft})
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		sess.Scrolled(&fyne.ScrollEvent{Scrolled: fyne.Delta{DY: 1}})
 	}
 

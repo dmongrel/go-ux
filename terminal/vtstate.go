@@ -107,9 +107,9 @@ func (v *vtState) snapshot() gridSnapshot {
 
 	cols, rows := v.term.Size()
 	cells := make([][]snapCell, rows)
-	for y := 0; y < rows; y++ {
+	for y := range rows {
 		row := make([]snapCell, cols)
-		for x := 0; x < cols; x++ {
+		for x := range cols {
 			g := v.term.Cell(x, y)
 			row[x] = snapCell{
 				Rune:      g.Char,

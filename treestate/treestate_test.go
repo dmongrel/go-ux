@@ -1,6 +1,7 @@
 package treestate_test
 
 import (
+	"slices"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -25,10 +26,8 @@ func fixtureTree() (*widget.Tree, func(uid string) bool) {
 			return true
 		}
 		for _, kids := range children {
-			for _, k := range kids {
-				if k == uid {
-					return true
-				}
+			if slices.Contains(kids, uid) {
+				return true
 			}
 		}
 		return false

@@ -282,8 +282,8 @@ func TestBuildWinptyEnvBlockMergesOverridesWithInheritedEnv(t *testing.T) {
 	// case-insensitively rather than assuming a specific case.
 	got := make(map[string]string, len(entries))
 	for _, e := range entries {
-		if i := strings.IndexByte(e, '='); i >= 0 {
-			got[strings.ToUpper(e[:i])] = e[i+1:]
+		if before, after, ok := strings.Cut(e, "="); ok {
+			got[strings.ToUpper(before)] = after
 		}
 	}
 
