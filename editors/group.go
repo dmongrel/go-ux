@@ -2,11 +2,14 @@ package editors
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+
+	"go-ux/db"
 )
 
 // Group is the embeddable parent layout component: it owns the current
@@ -33,6 +36,10 @@ type Group struct {
 	nextID  int
 
 	container *fyne.Container // holds the single current CanvasObject rebuild() produces; container.NewStack(...) with exactly one child, swapped via .Objects on every rebuild — this indirection is what lets Group itself stay one stable CanvasObject (needed since a fyne.CanvasObject generally can't just "become" a different concrete object once placed in a parent container)
+
+	database  *db.DB // nil means "no persistence" — matches terminal's NewWindow (no db) vs NewWindowFromSettings (db) pattern; every method below must stay nil-safe
+	groupID   string // caller-chosen, unique per Group instance persisted independently — meaningless if database is nil
+	restoring bool   // held true while NewGroupFromSettings is replaying a persisted layout (AddTab etc. run as part of that replay) so notifyChanged doesn't fire mid-restore and overwrite the still-under-construction tree with g.root's stale pre-restore shape — same guard pattern as treestate.restoring
 }
 
 // NewGroup builds a Group with a single, empty primary Pane. Call AddTab
@@ -51,10 +58,22 @@ func (g *Group) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(g.container)
 }
 
-// notifyChanged is called by Pane after every tab/structural mutation —
-// currently a no-op; layoutstate.go (a later task) will make this
-// actually persist the live layout to a *db.DB.
-func (g *Group) notifyChanged() {}
+// notifyChanged is called by Pane after every tab/structural mutation. If
+// this Group has a database (see NewGroupFromSettings), it persists the
+// ENTIRE current layout immediately — matching SaveEditorLayout's
+// full-replace design and this package's "live, not just on close"
+// persistence decision. A no-op if database is nil (NewGroup-only
+// callers) or while a persisted layout is being replayed (see
+// g.restoring's doc comment).
+func (g *Group) notifyChanged() {
+	if g.database == nil || g.restoring {
+		return
+	}
+	panes, tabs := g.buildPersistedLayout()
+	if err := g.database.SaveEditorLayout(g.groupID, panes, tabs); err != nil {
+		log.Printf("editors: save layout: %v", err)
+	}
+}
 
 // AddTab is Phase 1's way to seed tabs into the primary pane (the demo
 // harness needs this before split-based layout has any tabs to move
