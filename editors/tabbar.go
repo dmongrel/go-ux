@@ -60,11 +60,33 @@ type TabBar struct {
 	// and selection only.
 	OnContextMenu func(tab *Tab, pos fyne.Position)
 
+	// PreviewMode reflects whether the active tab's Pane is currently
+	// showing rendered markdown preview rather than the raw editable text
+	// (pane.go's togglePreview owns the actual state; TabBar only mirrors
+	// it to label/show the toggle button correctly) — set this alongside
+	// Active before calling Refresh.
+	PreviewMode bool
+	// OnTogglePreview fires when the user taps the preview toggle button
+	// (only shown when Active is non-nil and isMarkdownFile(Active.FilePath)
+	// — see rebuild). TabBar has no opinion on what "preview" means; that's
+	// pane.go's togglePreview.
+	OnTogglePreview func()
+
 	// strip is the HBox of chips built by rebuild and shown by the
 	// renderer. Kept as a field (rather than rebuilt as a whole new
 	// container each render) so Refresh can replace its Objects in place
 	// without CreateRenderer running again.
 	strip *fyne.Container
+	// previewBtn is the right-aligned markdown-preview toggle (see the
+	// design plan's "Revised" tab-bar note: icon buttons live
+	// right-justified in the tab bar itself, not a separate toolbar row).
+	// Shown/hidden and relabeled by rebuild depending on the active tab.
+	previewBtn *widget.Button
+	// root lays out strip (left, taking all remaining space) beside
+	// previewBtn (right) — this is what CreateRenderer actually shows;
+	// strip alone is no longer the whole widget content once the preview
+	// button exists.
+	root *fyne.Container
 }
 
 // NewTabBar builds an empty TabBar. Set Tabs (and, once non-empty,
@@ -76,21 +98,29 @@ func NewTabBar() *TabBar {
 	return t
 }
 
-// CreateRenderer builds the chip strip. Fyne calls this once per widget
-// instance; later structural changes go through Refresh, not a second
-// CreateRenderer call, which is why strip is stashed on the TabBar itself
-// (see its doc comment) rather than only living inside the renderer.
+// CreateRenderer builds the chip strip plus the right-aligned preview
+// toggle. Fyne calls this once per widget instance; later structural
+// changes go through Refresh, not a second CreateRenderer call, which is
+// why strip/previewBtn/root are stashed on the TabBar itself (see their
+// doc comments) rather than only living inside the renderer.
 func (t *TabBar) CreateRenderer() fyne.WidgetRenderer {
 	t.strip = container.NewHBox()
+	t.previewBtn = widget.NewButton("", func() {
+		if t.OnTogglePreview != nil {
+			t.OnTogglePreview()
+		}
+	})
+	t.root = container.NewBorder(nil, nil, nil, t.previewBtn, t.strip)
 	t.rebuild()
-	return widget.NewSimpleRenderer(t.strip)
+	return widget.NewSimpleRenderer(t.root)
 }
 
-// Refresh rebuilds the chip strip from the current Tabs/Active before
-// delegating to widget.BaseWidget.Refresh's usual redraw — the standard
-// Fyne "override Refresh to react to mutable exported fields" pattern
-// (see terminal/widget.go's sessionRenderer.Refresh for another instance
-// of the same idea, there driven by grid/cursor state instead).
+// Refresh rebuilds the chip strip and preview toggle from the current
+// Tabs/Active/PreviewMode before delegating to widget.BaseWidget.Refresh's
+// usual redraw — the standard Fyne "override Refresh to react to mutable
+// exported fields" pattern (see terminal/widget.go's
+// sessionRenderer.Refresh for another instance of the same idea, there
+// driven by grid/cursor state instead).
 func (t *TabBar) Refresh() {
 	if t.strip != nil {
 		t.rebuild()
@@ -98,9 +128,10 @@ func (t *TabBar) Refresh() {
 	t.BaseWidget.Refresh()
 }
 
-// rebuild replaces strip's chips with a fresh set built from Tabs/Active.
-// Called by both CreateRenderer (first build) and Refresh (every
-// subsequent one) — see their doc comments.
+// rebuild replaces strip's chips with a fresh set built from Tabs/Active,
+// and shows/hides/relabels previewBtn based on whether Active is a
+// Markdown file. Called by both CreateRenderer (first build) and Refresh
+// (every subsequent one) — see their doc comments.
 func (t *TabBar) rebuild() {
 	chips := make([]fyne.CanvasObject, 0, len(t.Tabs))
 	for _, tab := range t.Tabs {
@@ -108,6 +139,17 @@ func (t *TabBar) rebuild() {
 	}
 	t.strip.Objects = chips
 	t.strip.Refresh()
+
+	if t.Active != nil && isMarkdownFile(t.Active.FilePath) {
+		if t.PreviewMode {
+			t.previewBtn.SetText("Edit")
+		} else {
+			t.previewBtn.SetText("Preview")
+		}
+		t.previewBtn.Show()
+	} else {
+		t.previewBtn.Hide()
+	}
 }
 
 // newChip builds one tab's visual chip: a title (tap to select,

@@ -29,9 +29,17 @@ type Pane struct {
 	active *Tab
 
 	center         *fyne.Container // holds the current active Tab's content; swapped in place on tab switch
-	contentCleanup func()          // unregisters center's current content from its Document's listeners AND its font-size theme override; nil when center is empty
+	contentCleanup func()          // unregisters center's current content from its Document's listeners AND its font-size theme override; nil when center is empty or showing a markdown preview snapshot
 
 	fonts *fontsettings.State // this Pane's Group's font-size state (font.go); a standalone default when group is nil (pure pane-level tests)
+
+	// previewMode is whether center is currently showing a rendered
+	// markdown preview (markdown.go's renderMarkdown) of the active tab
+	// rather than the normal editable content — toggled via
+	// tabBar.OnTogglePreview (wired in newPane, handled by togglePreview
+	// below). Reset to false on every tab switch (setActive) — preview is
+	// a per-view toggle, not state that follows a tab around.
+	previewMode bool
 }
 
 // newPane builds a Pane wired into group (which may be nil in pure
@@ -49,6 +57,7 @@ func newPane(group *Group, id string, isPrimary bool) *Pane {
 	p.tabBar.OnSelected = p.selectTab
 	p.tabBar.OnClosed = p.closeTabRequested
 	p.tabBar.OnContextMenu = p.showContextMenu
+	p.tabBar.OnTogglePreview = p.togglePreview
 	p.southBar = NewSouthBar()
 	p.center = container.NewStack()
 	p.ExtendBaseWidget(p)
@@ -100,16 +109,55 @@ func (p *Pane) setActive(tab *Tab) {
 	}
 
 	p.active = tab
-	if tab != nil {
-		content, cleanup := newDocumentContent(tab, p, p.fonts)
-		p.center.Objects = []fyne.CanvasObject{content}
-		p.contentCleanup = cleanup
-	} else {
-		p.center.Objects = nil
-	}
-	p.center.Refresh()
+	p.previewMode = false // switching tabs always lands on the editable view, not a stale preview snapshot of the new tab
+	p.rebuildCenterContent()
 	p.tabBar.Tabs = p.tabs
 	p.tabBar.Active = tab
+	p.tabBar.PreviewMode = p.previewMode
+	p.tabBar.Refresh()
+}
+
+// rebuildCenterContent (re)builds center's content for the current
+// active/previewMode combination: nothing (no active tab), a rendered
+// markdown snapshot (previewMode on a Markdown tab), or the normal
+// editable Document-backed content otherwise. Callers that change
+// previewMode or active must call this themselves (see setActive,
+// togglePreview) — it does not touch tabBar.
+func (p *Pane) rebuildCenterContent() {
+	if p.active == nil {
+		p.center.Objects = nil
+		p.center.Refresh()
+		return
+	}
+
+	if p.previewMode && isMarkdownFile(p.active.FilePath) {
+		preview := container.NewScroll(renderMarkdown([]byte(p.active.Doc.Text())))
+		p.center.Objects = []fyne.CanvasObject{preview}
+		p.center.Refresh()
+		return
+	}
+
+	content, cleanup := newDocumentContent(p.active, p, p.fonts)
+	p.center.Objects = []fyne.CanvasObject{content}
+	p.contentCleanup = cleanup
+	p.center.Refresh()
+}
+
+// togglePreview is tabBar.OnTogglePreview's handler: flips previewMode and
+// rebuilds center accordingly, without touching which tab is active. A
+// no-op if there's no active tab (the preview button is hidden in that
+// case anyway — see tabbar.go's rebuild).
+func (p *Pane) togglePreview() {
+	if p.active == nil {
+		return
+	}
+	if p.contentCleanup != nil {
+		p.contentCleanup()
+		p.contentCleanup = nil
+	}
+	p.previewMode = !p.previewMode
+	p.rebuildCenterContent()
+	p.tabBar.PreviewMode = p.previewMode
 	p.tabBar.Refresh()
 }
 

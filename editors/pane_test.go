@@ -3,6 +3,8 @@ package editors
 import (
 	"testing"
 
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	fynetest "fyne.io/fyne/v2/test"
 )
 
@@ -77,6 +79,86 @@ func TestPaneCloseTabRemovesAndPicksNeighbor(t *testing.T) {
 	}
 	if p.active != tabA && p.active != tabC {
 		t.Fatalf("active = %v, want tabA or tabC", p.active)
+	}
+}
+
+func TestPaneTogglePreviewSwitchesToRenderedMarkdown(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tab := NewTab("t1", "chapter1.md", "chapter1.md", "hello world")
+	p.AddTab(tab)
+
+	p.togglePreview()
+
+	if !p.previewMode {
+		t.Fatalf("previewMode = false after togglePreview, want true")
+	}
+	scroll, ok := p.center.Objects[0].(*container.Scroll)
+	if !ok {
+		t.Fatalf("center.Objects[0] is %T, want *container.Scroll (preview)", p.center.Objects[0])
+	}
+	if _, ok := scroll.Content.(*fyne.Container); !ok {
+		t.Fatalf("preview scroll content is %T, want *fyne.Container (renderMarkdown's VBox)", scroll.Content)
+	}
+	if p.contentCleanup != nil {
+		t.Errorf("contentCleanup is non-nil while showing a preview snapshot (nothing to clean up)")
+	}
+	if p.tabBar.PreviewMode != true {
+		t.Errorf("tabBar.PreviewMode = false, want true after togglePreview")
+	}
+}
+
+func TestPaneTogglePreviewTwiceReturnsToEditableContent(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tab := NewTab("t1", "chapter1.md", "chapter1.md", "hello world")
+	p.AddTab(tab)
+
+	p.togglePreview()
+	p.togglePreview()
+
+	if p.previewMode {
+		t.Fatalf("previewMode = true after toggling twice, want false")
+	}
+	if p.contentCleanup == nil {
+		t.Errorf("contentCleanup is nil after returning to editable content, want a real cleanup func")
+	}
+}
+
+func TestPaneTogglePreviewNoOpForNonMarkdownTab(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tab := NewTab("t1", "notes.txt", "notes.txt", "hello world")
+	p.AddTab(tab)
+
+	// TabBar hides the preview button for non-Markdown tabs, so this path
+	// isn't reachable via the UI — but rebuildCenterContent's
+	// isMarkdownFile guard must still hold even if togglePreview is called
+	// directly, so it's still worth asserting content stays editable.
+	p.togglePreview()
+
+	if p.contentCleanup == nil {
+		t.Errorf("contentCleanup is nil — content did not stay in editable mode for a non-Markdown tab")
+	}
+}
+
+func TestPaneSetActiveResetsPreviewMode(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tabA := NewTab("a", "a.md", "a.md", "content a")
+	tabB := NewTab("b", "b.md", "b.md", "content b")
+	p.AddTab(tabA)
+	p.AddTab(tabB)
+
+	p.togglePreview() // preview tabB (the active one)
+	p.setActive(tabA)
+
+	if p.previewMode {
+		t.Errorf("previewMode = true after setActive, want false (switching tabs exits preview)")
 	}
 }
 
