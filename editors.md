@@ -9,12 +9,12 @@ a diff for human review.
 
 **Current state (this document):** the layout/interaction shell — tab bar,
 split/move-pane menus, resize bars, persisted layout — plus a real,
-editable, Document-backed content area (see "Documents and editing"
-below). No file I/O (content is seeded in memory by the caller, not loaded
-from disk), no line numbers/soft wrap, no diff review, no markdown
-preview, no font settings, and no file watching yet — those are deferred
-to later phases so the interaction surface could be verified independently
-first.
+editable, Document-backed content area with line numbers and a soft-wrap
+toggle (see "Documents and editing" below). No file I/O (content is seeded
+in memory by the caller, not loaded from disk), no diff review, no
+markdown preview, no font settings, and no file watching yet — those are
+deferred to later phases so the interaction surface could be verified
+independently first.
 
 ## Public API
 
@@ -80,6 +80,14 @@ caller wanting to load a file's contents reads it themselves and passes
 the text to `NewTab`; there's no `OpenFile`-from-disk helper yet (that,
 along with `Document.Dirty()`-aware save/reload and file watching, is a
 later phase).
+
+A right-aligned line-number gutter runs down the left side of the content
+area. Right-click it for **Toggle Soft Wrap** — off, long lines overflow
+horizontally (scrollbar); on (the default), they wrap within the visible
+width. Line numbers track logical lines exactly when wrap is off; with
+wrap on, a long logical line still gets a single gutter number even though
+it spans multiple visual lines (an accepted approximation, not yet true
+visual-line numbering).
 
 ## Splitting and moving
 
@@ -164,10 +172,10 @@ to see the layout come back exactly as it was left.
 
 ## Deferred (not yet built)
 
-Line numbers, soft wrap, and markdown preview (via goldmark); font
-settings (a shared `Ctrl+scroll`-adjustable font-size pattern reused from
-`go-ux/terminal`, factored into a new shared `fontsettings` package); file
-I/O (loading from / saving to disk) and file watching (via `fsnotify`,
-auto-load or notify on external changes); and diff review (via
-`go-difflib`) plus an external API for a host app's own AI-assistant
-tooling to propose edits. All designed but not yet implemented.
+Markdown preview (via goldmark); font settings (a shared
+`Ctrl+scroll`-adjustable font-size pattern reused from `go-ux/terminal`,
+factored into a new shared `fontsettings` package); file I/O (loading from
+/ saving to disk) and file watching (via `fsnotify`, auto-load or notify on
+external changes); and diff review (via `go-difflib`) plus an external API
+for a host app's own AI-assistant tooling to propose edits. All designed
+but not yet implemented.
