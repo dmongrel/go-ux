@@ -300,36 +300,61 @@ func (p *Pane) closeTabRequested(tab *Tab) {
 }
 
 // showContextMenu is TabBar.OnContextMenu's handler: builds and shows the
-// tab chip's right-click menu (split/move/close actions).
+// tab chip's right-click menu (split/move/close actions). Split/Move items
+// are greyed out (MenuItem.Disabled) when the action genuinely isn't
+// possible right now (a pane already nested one level deep can't be split
+// or auto-split-then-moved any further — see split.go's one-level-nesting
+// cap) — previously every item was always enabled and an ineligible one
+// was just a silent no-op when clicked, a real, if low-severity, UX gap
+// flagged since Phase 1's original whole-branch review.
 func (p *Pane) showContextMenu(tab *Tab, pos fyne.Position) {
 	canvas := fyne.CurrentApp().Driver().CanvasForObject(p)
 	if canvas == nil {
 		return
 	}
 
+	var root *node
+	if p.group != nil {
+		root = p.group.root
+	}
+	splittable := p.group != nil && canSplit(root, p)
+	canMoveRight := p.group != nil && (canAdjacentOrSplit(root, p, axisHorizontal))
+	canMoveDown := p.group != nil && (canAdjacentOrSplit(root, p, axisVertical))
+
 	items := []*fyne.MenuItem{
-		fyne.NewMenuItem("Split Right", func() {
+		{Label: "Split Right", Disabled: !splittable, Action: func() {
 			if p.group != nil {
 				p.group.SplitRight(p)
 			}
-		}),
-		fyne.NewMenuItem("Split Down", func() {
+		}},
+		{Label: "Split Down", Disabled: !splittable, Action: func() {
 			if p.group != nil {
 				p.group.SplitDown(p)
 			}
-		}),
-		fyne.NewMenuItem("Move Right", func() {
+		}},
+		{Label: "Move Right", Disabled: !canMoveRight, Action: func() {
 			if p.group != nil {
 				p.group.MoveRight(p, tab)
 			}
-		}),
-		fyne.NewMenuItem("Move Down", func() {
+		}},
+		{Label: "Move Down", Disabled: !canMoveDown, Action: func() {
 			if p.group != nil {
 				p.group.MoveDown(p, tab)
 			}
-		}),
+		}},
 		fyne.NewMenuItem("Close Tab", func() { p.closeTabRequested(tab) }),
 	}
 	menu := fyne.NewMenu("", items...)
 	widget.ShowPopUpMenuAtPosition(menu, canvas, pos)
+}
+
+// canAdjacentOrSplit reports whether Move{Right,Down} would actually do
+// anything for source along axis: either an adjacent pane already exists
+// there, or one could be auto-created via a split (movePane's own
+// "auto-split-then-move" fallback — see group.go).
+func canAdjacentOrSplit(root *node, source *Pane, axis splitAxis) bool {
+	if _, ok := adjacentPane(root, source, axis); ok {
+		return true
+	}
+	return canSplit(root, source)
 }

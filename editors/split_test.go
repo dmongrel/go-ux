@@ -177,6 +177,58 @@ func TestAdjacentPaneMissingReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestCanAdjacentOrSplitTrueWhenAdjacentExists(t *testing.T) {
+	paneA := newPlaceholderPane("a")
+	paneB := newPlaceholderPane("b")
+	root := leaf(paneA)
+	root, ok := split(root, paneA, axisHorizontal, paneB)
+	if !ok {
+		t.Fatalf("split failed")
+	}
+
+	if !canAdjacentOrSplit(root, paneA, axisHorizontal) {
+		t.Errorf("expected true — paneB is already adjacent")
+	}
+}
+
+func TestCanAdjacentOrSplitTrueWhenSplittable(t *testing.T) {
+	paneA := newPlaceholderPane("a")
+	root := leaf(paneA)
+
+	if !canAdjacentOrSplit(root, paneA, axisHorizontal) {
+		t.Errorf("expected true — a single unsplit pane can still auto-split")
+	}
+}
+
+func TestCanAdjacentOrSplitFalseForNestedPaneWithNoMatchingSibling(t *testing.T) {
+	paneA := newPlaceholderPane("a")
+	paneB := newPlaceholderPane("b")
+	paneC := newPlaceholderPane("c")
+
+	root := leaf(paneA)
+	root, ok := split(root, paneA, axisHorizontal, paneB)
+	if !ok {
+		t.Fatalf("first split failed")
+	}
+	// Nest paneC under paneB on the perpendicular axis — paneB/paneC are
+	// now at depth 2 and can't be split further.
+	root, ok = split(root, paneB, axisVertical, paneC)
+	if !ok {
+		t.Fatalf("second split failed")
+	}
+
+	// paneB has a vertical sibling (paneC) but no HORIZONTAL sibling of
+	// its own within the inner split, and can't auto-split (depth 2) to
+	// make one.
+	if canAdjacentOrSplit(root, paneB, axisHorizontal) {
+		t.Errorf("expected false — paneB is nested and has no horizontal sibling")
+	}
+	// The vertical direction, however, already has paneC adjacent.
+	if !canAdjacentOrSplit(root, paneB, axisVertical) {
+		t.Errorf("expected true — paneC is already adjacent to paneB vertically")
+	}
+}
+
 func TestRebuildProducesCanvasObjectMatchingShape(t *testing.T) {
 	fynetest.NewApp()
 
