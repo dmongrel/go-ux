@@ -1,6 +1,8 @@
 package editors
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	fynetest "fyne.io/fyne/v2/test"
@@ -30,6 +32,72 @@ func TestNewGroupFromSettingsWithNoPriorStateFallsBackToDefault(t *testing.T) {
 	}
 	if only != g.primary {
 		t.Fatalf("expected the single pane to be the primary pane")
+	}
+}
+
+// TestNewGroupFromSettingsReadsRealFileContentOnRestore is a regression
+// test for a real gap: before Group had any real file I/O (OpenFile, a
+// later phase than the original layout persistence), a restored tab
+// showed a fake "(restored placeholder text for ...)" string instead of
+// its actual file content — that stopped being necessary once reading a
+// real file from disk was something this package already did elsewhere,
+// but layoutstate.go's restore path kept using the fake placeholder
+// anyway until this fix.
+func TestNewGroupFromSettingsReadsRealFileContentOnRestore(t *testing.T) {
+	app := fynetest.NewApp()
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("test.NewDB: %v", err)
+	}
+	defer d.Close()
+
+	path := filepath.Join(t.TempDir(), "chapter1.txt")
+	if err := os.WriteFile(path, []byte("real saved content"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	panes := []db.EditorPane{{ID: 1, IsPane: true, IsPrimary: true}}
+	tabs := []db.EditorTab{{PaneID: 1, FilePath: path, TabOrder: 0, IsActive: true}}
+	if err := d.SaveEditorLayout("g-restore", panes, tabs); err != nil {
+		t.Fatalf("SaveEditorLayout: %v", err)
+	}
+
+	g := NewGroupFromSettings(app, d, "g-restore")
+	g.Close()
+
+	if got := g.primary.active.Doc.Text(); got != "real saved content" {
+		t.Errorf("restored tab text = %q, want %q (the real file content, not a placeholder)", got, "real saved content")
+	}
+}
+
+// TestNewGroupFromSettingsMissingFileShowsClearPlaceholder confirms a
+// restored tab whose file no longer exists on disk gets an explicit,
+// clearly-labeled placeholder rather than either a crash or a silently
+// empty Document.
+func TestNewGroupFromSettingsMissingFileShowsClearPlaceholder(t *testing.T) {
+	app := fynetest.NewApp()
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("test.NewDB: %v", err)
+	}
+	defer d.Close()
+
+	missingPath := filepath.Join(t.TempDir(), "does-not-exist.txt")
+	panes := []db.EditorPane{{ID: 1, IsPane: true, IsPrimary: true}}
+	tabs := []db.EditorTab{{PaneID: 1, FilePath: missingPath, TabOrder: 0, IsActive: true}}
+	if err := d.SaveEditorLayout("g-restore-missing", panes, tabs); err != nil {
+		t.Fatalf("SaveEditorLayout: %v", err)
+	}
+
+	g := NewGroupFromSettings(app, d, "g-restore-missing")
+	g.Close()
+
+	got := g.primary.active.Doc.Text()
+	if got == "" {
+		t.Errorf("restored tab text is empty for a missing file, want a clear placeholder message")
+	}
+	if got == "real saved content" {
+		t.Errorf("restored tab text unexpectedly matches real content for a file that shouldn't exist")
 	}
 }
 

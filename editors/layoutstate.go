@@ -2,6 +2,7 @@ package editors
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 
@@ -170,7 +171,7 @@ func rebuildTreeFromPersisted(g *Group, panes []db.EditorPane, tabs []db.EditorT
 			sortTabsByOrder(rowTabs)
 			var activeTab *Tab
 			for _, t := range rowTabs {
-				tab := NewTab(t.FilePath, filepath.Base(t.FilePath), t.FilePath, "(restored placeholder text for "+t.FilePath+")")
+				tab := NewTab(t.FilePath, filepath.Base(t.FilePath), t.FilePath, restoredTabText(t.FilePath))
 				p.AddTab(tab)
 				if t.IsActive {
 					activeTab = tab
@@ -206,6 +207,28 @@ func rebuildTreeFromPersisted(g *Group, panes []db.EditorPane, tabs []db.EditorT
 	// produces one itself, but old saved state might still have one.
 	root = pruneEmpty(root, primary)
 	return root, primary, true
+}
+
+// restoredTabText reads path's current content from disk for a tab being
+// restored from persisted layout. Earlier (before Group had any real file
+// I/O — see mcptooling.go's OpenFile, added in a later phase) this
+// couldn't read the real file at all and stood in a fake
+// "(restored placeholder text for ...)" string instead, which read-only
+// masqueraded as a real editable Document; that's no longer necessary now
+// that reading a real file from disk is something this package already
+// does elsewhere. Falls back to a clearly-labeled placeholder (never
+// silently empty) if path is unreadable — a missing/moved/deleted file
+// since the layout was last saved, or an empty path for a tab that was
+// never file-backed to begin with.
+func restoredTabText(path string) string {
+	if path == "" {
+		return "(no file path — this tab was never backed by a real file)"
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "(could not read " + path + ": " + err.Error() + ")"
+	}
+	return string(data)
 }
 
 func sortByOrder(panes []db.EditorPane) {
