@@ -96,6 +96,19 @@ func (p *Pane) setActive(tab *Tab) {
 	p.tabBar.Refresh()
 }
 
+// hasTab reports whether tab (by pointer identity) is already in p.tabs —
+// used by Group's move logic to detect when an auto-split (see splitPane)
+// already copied the tab being moved into the target pane, so it isn't
+// added a second time.
+func (p *Pane) hasTab(tab *Tab) bool {
+	for _, t := range p.tabs {
+		if t == tab {
+			return true
+		}
+	}
+	return false
+}
+
 // removeTabLocally splices tab out of p.tabs by pointer identity and, if
 // it was the active tab, picks a reasonable neighbor to activate next
 // (the tab that was to closed tab's right, or the new last tab if the

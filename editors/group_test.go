@@ -40,6 +40,36 @@ func TestSplitRightCreatesTwoPaneLayout(t *testing.T) {
 	}
 }
 
+// TestSplitCopiesActiveTabIntoNewPane is a regression test for a real bug
+// found via manual testing: SplitRight/SplitDown created the new pane but
+// left it with zero tabs, contradicting the design's split semantics
+// ("the new pane shows the SAME underlying document") — the new pane
+// should immediately show the source pane's active tab, not start empty.
+func TestSplitCopiesActiveTabIntoNewPane(t *testing.T) {
+	fynetest.NewApp()
+
+	g := NewGroup(nil)
+	tab := NewTab("t1", "chapter1.md", "", "")
+	g.AddTab(tab)
+
+	newPaneObj := g.splitPane(g.primary, axisHorizontal)
+	if newPaneObj == nil {
+		t.Fatal("splitPane returned nil, want the new Pane")
+	}
+
+	if len(newPaneObj.tabs) != 1 || newPaneObj.tabs[0] != tab {
+		t.Fatalf("new pane's tabs = %v, want [tab] (the same *Tab, shared with the source pane)", newPaneObj.tabs)
+	}
+	if newPaneObj.active != tab {
+		t.Fatalf("new pane's active = %v, want tab", newPaneObj.active)
+	}
+	// The source pane must still have it too — split shares, it doesn't
+	// move (that's what distinguishes it from Move).
+	if len(g.primary.tabs) != 1 || g.primary.tabs[0] != tab {
+		t.Fatalf("source pane's tabs = %v, want [tab] (split must not remove it from the source)", g.primary.tabs)
+	}
+}
+
 func TestSplitDownOnAlreadySplitPaneDoesNotExceedOneLevel(t *testing.T) {
 	fynetest.NewApp()
 
@@ -167,10 +197,15 @@ func TestClosingLastTabInNonPrimaryPaneCollapsesSplit(t *testing.T) {
 		}
 	}
 
-	tab := NewTab("t1", "chapter1.md", "", "")
-	secondary.AddTab(tab)
+	// Split copies the source's active tab into the new pane (see
+	// TestSplitCopiesActiveTabIntoNewPane) — secondary already has `seed`
+	// as its only tab at this point. Closing it is what should empty and
+	// collapse the pane; no need to add a second tab first.
+	if len(secondary.tabs) != 1 || secondary.tabs[0] != seed {
+		t.Fatalf("precondition failed: secondary.tabs = %v, want [seed]", secondary.tabs)
+	}
 
-	secondary.closeTabRequested(tab)
+	secondary.closeTabRequested(seed)
 
 	visited = nil
 	walkPanes(g.root, func(p *Pane) { visited = append(visited, p) })

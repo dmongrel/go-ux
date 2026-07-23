@@ -130,6 +130,20 @@ func (g *Group) splitPane(source *Pane, axis splitAxis) *Pane {
 		return nil
 	}
 	g.root = newRoot
+
+	// Split shows the same document in both panes ("the new pane shows
+	// the SAME underlying document, synced live" — see the design's split
+	// semantics decision, distinguishing it from Move, which relocates
+	// rather than duplicates). Phase 1 has no separate shared Document
+	// object yet (that's Phase 2), so the *Tab itself stands in for that:
+	// both panes' tab lists end up holding the identical *Tab pointer,
+	// not a copy — closing it in one pane only removes it from that
+	// pane's own list, leaving the other pane's reference untouched,
+	// matching IntelliJ's split-editor behavior.
+	if source.active != nil {
+		newPaneObj.AddTab(source.active)
+	}
+
 	g.rebuildContent()
 	g.notifyChanged()
 	return newPaneObj
@@ -149,6 +163,7 @@ func (g *Group) MoveDown(source *Pane, tab *Tab) {
 
 func (g *Group) movePane(source *Pane, tab *Tab, axis splitAxis) {
 	target, ok := adjacentPane(g.root, source, axis)
+	alreadyInTarget := false
 	if !ok {
 		if g.splitPane(source, axis) == nil {
 			return // source wasn't eligible to split; nothing to move into
@@ -157,13 +172,22 @@ func (g *Group) movePane(source *Pane, tab *Tab, axis splitAxis) {
 		if !ok {
 			return // shouldn't happen after a successful split, but be defensive
 		}
+		// splitPane just copied source's (then-)active tab into target —
+		// if that happened to be the same tab this move is relocating,
+		// target already has it; adding it again below would duplicate
+		// it, so just make sure it's the active one there instead.
+		alreadyInTarget = target.hasTab(tab)
 	}
 
 	stillHasTabs := source.removeTabLocally(tab)
 	source.tabBar.Tabs = source.tabs
 	source.tabBar.Refresh()
 
-	target.AddTab(tab)
+	if alreadyInTarget {
+		target.setActive(tab)
+	} else {
+		target.AddTab(tab)
+	}
 
 	if !stillHasTabs && !source.isPrimary {
 		g.closePane(source) // closePane rebuilds content and notifies; avoid double work below
