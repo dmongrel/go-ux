@@ -28,6 +28,7 @@ func (g *Group) MoveRight(source *Pane, tab *Tab)
 func (g *Group) MoveDown(source *Pane, tab *Tab)
 func (g *Group) OpenFile(path string) (*Tab, error)
 func (g *Group) ProposeDiff(path string, newText string) error
+func (g *Group) SaveTab(tab *Tab) error
 func (g *Group) Close()
 // Group also implements fyne.CanvasObject (embeds widget.BaseWidget), so
 // it can be dropped straight into any Fyne container/window.
@@ -53,10 +54,11 @@ close-time save. If nothing has been saved yet for `groupID` (or
 default `NewGroup` builds — a caller that forgets to persist, or doesn't
 need to, still gets a working `Group`.
 
-`AddTab` adds `tab` to the primary pane — Phase 1's way to seed content
-(see "Minimal usage" below); Phase 2 will likely add a more direct
-`OpenFile`-style entry point once there's a real file-backed `Document`
-to open.
+`AddTab` adds `tab` to the primary pane — the low-level way to seed
+content directly (see "Minimal usage" below), e.g. for text that isn't
+backed by a real file yet. `OpenFile` is the higher-level, file-backed
+alternative (see "Diff review (mcp_tooling)" below) — prefer it when
+`path` is real.
 
 ## Layout model
 
@@ -80,11 +82,12 @@ into the new `Pane`), typing in either one's content area updates the
 other immediately: `Document` keeps a listener registry, and each `Pane`'s
 content widget registers/unregisters itself as its active tab changes.
 
-There's no file I/O yet — `Document` is purely an in-memory buffer. A
-caller wanting to load a file's contents reads it themselves and passes
-the text to `NewTab`; there's no `OpenFile`-from-disk helper yet (that,
-along with `Document.Dirty()`-aware save/reload and file watching, is a
-later phase).
+**Ctrl+S saves the active tab** — writes the `Document`'s current text to
+`Tab.FilePath` and clears `Dirty()`. A `Tab` with no `FilePath` (e.g. one
+seeded directly via `NewTab`/`AddTab` rather than `OpenFile`) can't be
+saved this way; there's no "Save As" yet, and no in-app indication of a
+save failure beyond a logged error (`Group.SaveTab`'s returned `error` is
+available to a caller driving it programmatically).
 
 A right-aligned line-number gutter runs down the left side of the content
 area, with the cursor's current line kept at full brightness and every
@@ -270,8 +273,8 @@ time if a node exists.
 
 ## Deferred (not yet built)
 
-File I/O beyond `OpenFile`/`ProposeDiff` (there's still no "save this tab
-to disk" for a normal, non-diff-review edit). `file_watch_mode` is read
-once at construction, not re-applied live by `ApplyEditorSettings` (see
-that function's own doc comment for why). All designed but not yet
+"Save As" (writing a `Tab` with no `FilePath` to a newly chosen location —
+Ctrl+S only works for a `Tab` that already has one). `file_watch_mode` is
+read once at construction, not re-applied live by `ApplyEditorSettings`
+(see that function's own doc comment for why). All designed but not yet
 implemented/decided.
