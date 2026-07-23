@@ -143,6 +143,40 @@ func (p *Pane) rebuildCenterContent() {
 	p.center.Refresh()
 }
 
+// showDiffReview switches center to a read-only colored diff between
+// tab.Doc.Text() and tab.pendingDiff.newText, and puts southBar into
+// SouthBarDiffReview mode with Accept/Cancel wired to the owning Group —
+// called by Group.ProposeDiff for every Pane currently showing tab.
+// Requires tab.pendingDiff to be non-nil (the caller, ProposeDiff, always
+// sets it just before calling this).
+func (p *Pane) showDiffReview(tab *Tab) {
+	if p.contentCleanup != nil {
+		p.contentCleanup()
+		p.contentCleanup = nil
+	}
+	lines := computeDiff(tab.Doc.Text(), tab.pendingDiff.newText)
+	p.center.Objects = []fyne.CanvasObject{container.NewScroll(renderDiff(lines))}
+	p.center.Refresh()
+
+	p.southBar.SetMode(SouthBarDiffReview, func() {
+		if p.group != nil {
+			p.group.acceptDiff(tab)
+		}
+	}, func() {
+		if p.group != nil {
+			p.group.cancelDiff(tab)
+		}
+	})
+}
+
+// exitDiffReview returns southBar to hidden and center to its normal
+// (editable or preview) content — called by Group.exitDiffReview once a
+// pending diff has been accepted or cancelled.
+func (p *Pane) exitDiffReview() {
+	p.southBar.SetMode(SouthBarHidden, nil, nil)
+	p.rebuildCenterContent()
+}
+
 // togglePreview is tabBar.OnTogglePreview's handler: flips previewMode and
 // rebuilds center accordingly, without touching which tab is active. A
 // no-op if there's no active tab (the preview button is hidden in that

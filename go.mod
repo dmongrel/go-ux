@@ -5,6 +5,7 @@ go 1.26
 require (
 	fyne.io/fyne/v2 v2.8.0
 	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
+	github.com/pmezard/go-difflib v1.0.0
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/image v0.44.0
 	golang.org/x/sys v0.46.0
@@ -40,7 +41,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
-	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
 	github.com/srwiley/oksvg v0.0.0-20221011165216-be6e8873101c // indirect

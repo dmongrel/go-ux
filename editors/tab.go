@@ -10,6 +10,12 @@ type Tab struct {
 	Title    string
 	FilePath string
 	Doc      *Document
+
+	// pendingDiff is non-nil while an mcp_tooling-proposed diff (see
+	// diff.go/mcptooling.go) is awaiting Accept/Cancel. Unexported — a host
+	// app drives this only through Group.ProposeDiff and the south bar's
+	// Accept/Cancel buttons, never by touching Tab directly.
+	pendingDiff *pendingDiff
 }
 
 // Text returns the Tab's current content, delegating to its Document.
