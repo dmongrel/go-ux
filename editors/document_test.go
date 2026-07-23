@@ -27,6 +27,23 @@ func TestMarkCleanClearsDirty(t *testing.T) {
 	}
 }
 
+func TestMarkCleanNotifiesListenersWithUnchangedText(t *testing.T) {
+	d := NewDocument("hello")
+
+	var got string
+	called := false
+	d.RegisterListener("key1", func(text string) { called = true; got = text })
+
+	d.MarkClean()
+
+	if !called {
+		t.Errorf("listener did not fire for MarkClean — anything watching purely for Dirty transitions (e.g. a tab bar's unsaved-changes indicator) would never find out a save happened")
+	}
+	if got != "hello" {
+		t.Errorf("listener received %q, want unchanged %q", got, "hello")
+	}
+}
+
 func TestSetTextUpdatesTextAndMarksDirty(t *testing.T) {
 	d := NewDocument("hello")
 

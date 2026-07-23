@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	fynetest "fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 )
 
 // chipObjects returns the i'th chip's (title, close) tappable objects,
@@ -136,6 +137,43 @@ func TestTabBarPreviewButtonTapFiresOnTogglePreview(t *testing.T) {
 
 	if !called {
 		t.Errorf("OnTogglePreview did not fire on preview button tap")
+	}
+}
+
+func chipTitleLabelText(t *testing.T, title *chipTitle) string {
+	t.Helper()
+	renderer := title.CreateRenderer()
+	label, ok := renderer.Objects()[0].(*widget.Label)
+	if !ok {
+		t.Fatalf("chipTitle renderer object is %T, want *widget.Label", renderer.Objects()[0])
+	}
+	return label.Text
+}
+
+func TestChipTitleShowsNoDirtyMarkerForCleanTab(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("a", "chapter1.md", "", "hello")
+	bar := NewTabBar()
+	bar.Tabs = []*Tab{tab}
+	title, _ := chipObjects(t, bar, 0)
+
+	if got := chipTitleLabelText(t, title); got != "chapter1.md" {
+		t.Errorf("title text = %q, want %q (no dirty marker)", got, "chapter1.md")
+	}
+}
+
+func TestChipTitleShowsDirtyMarkerForDirtyTab(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("a", "chapter1.md", "", "hello")
+	tab.Doc.SetText("edited")
+	bar := NewTabBar()
+	bar.Tabs = []*Tab{tab}
+	title, _ := chipObjects(t, bar, 0)
+
+	if got := chipTitleLabelText(t, title); got != "*chapter1.md" {
+		t.Errorf("title text = %q, want %q (dirty marker prefix)", got, "*chapter1.md")
 	}
 }
 

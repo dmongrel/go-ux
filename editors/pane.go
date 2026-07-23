@@ -151,7 +151,27 @@ func (p *Pane) rebuildCenterContent() {
 		}
 	})
 	p.center.Objects = []fyne.CanvasObject{content}
-	p.contentCleanup = cleanup
+
+	// A second, independent Document listener (content.go's own, keyed the
+	// same way, only syncs the editable widget's text) — this one exists
+	// solely to redraw the tab bar's "*" dirty indicator (tabbar.go's
+	// chipTitle) the moment Dirty() actually changes: once on the first
+	// edit (false -> true), and once on a successful Ctrl+S/Accept
+	// (true -> false, since Document.MarkClean also notifies listeners).
+	// Guarded to skip a Refresh (a full chip-strip rebuild) on every
+	// keystroke once already dirty, when Dirty() hasn't actually flipped.
+	lastDirty := tab.Dirty()
+	tab.Doc.RegisterListener(p.tabBar, func(string) {
+		if tab.Dirty() == lastDirty {
+			return
+		}
+		lastDirty = tab.Dirty()
+		p.tabBar.Refresh()
+	})
+	p.contentCleanup = func() {
+		cleanup()
+		tab.Doc.UnregisterListener(p.tabBar)
+	}
 	p.center.Refresh()
 }
 

@@ -217,8 +217,20 @@ func newChipTitle(tab *Tab, bar *TabBar) *chipTitle {
 	return c
 }
 
+// CreateRenderer prefixes the title with "*" while the tab has unsaved
+// changes (Tab.Dirty(), via its Document). This only needs to read
+// Dirty() once, at creation time, rather than staying live on its own,
+// because TabBar.rebuild() (see tabbar.go) discards and rebuilds every
+// chip — including a fresh chipTitle — on every TabBar.Refresh(), and
+// pane.go's rebuildCenterContent registers a Document listener that calls
+// tabBar.Refresh() specifically when Dirty() changes (an edit, or a
+// Ctrl+S save).
 func (c *chipTitle) CreateRenderer() fyne.WidgetRenderer {
-	label := widget.NewLabel(c.tab.Title)
+	text := c.tab.Title
+	if c.tab.Dirty() {
+		text = "*" + text
+	}
+	label := widget.NewLabel(text)
 	return widget.NewSimpleRenderer(label)
 }
 

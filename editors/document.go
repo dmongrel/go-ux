@@ -43,8 +43,17 @@ func (d *Document) Dirty() bool { return d.dirty }
 
 // MarkClean clears the Dirty flag — called after a successful save
 // (Group.SaveTab) so the Document stops reporting unsaved changes for
-// text that's now actually on disk.
-func (d *Document) MarkClean() { d.dirty = false }
+// text that's now actually on disk. Also notifies every registered
+// listener (same as SetText, with the unchanged current text) even
+// though the text itself didn't change, so anything watching purely for
+// Dirty-state transitions (e.g. a tab bar's unsaved-changes indicator —
+// see pane.go's rebuildCenterContent) finds out a save just happened.
+func (d *Document) MarkClean() {
+	d.dirty = false
+	for _, fn := range d.listeners {
+		fn(d.text)
+	}
+}
 
 // RegisterListener registers fn to be called with the new text every time
 // SetText changes it. key identifies the caller (typically the *Pane

@@ -207,6 +207,40 @@ func TestPaneContentOnSaveWritesTabToDisk(t *testing.T) {
 	}
 }
 
+func TestPaneTabBarShowsDirtyIndicatorAndClearsOnSave(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	path := writeTempFile(t, "chapter1.txt", "original")
+	tab, err := g.OpenFile(path)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	g.Close() // stop the real watcher before the write below — see watch_test.go's package doc comment
+
+	title, _ := chipObjects(t, g.primary.tabBar, 0)
+	if got := chipTitleLabelText(t, title); got != "chapter1.txt" {
+		t.Fatalf("initial title = %q, want %q (no dirty marker)", got, "chapter1.txt")
+	}
+
+	tab.Doc.SetText("edited")
+
+	title, _ = chipObjects(t, g.primary.tabBar, 0)
+	if got := chipTitleLabelText(t, title); got != "*chapter1.txt" {
+		t.Errorf("title after edit = %q, want %q (dirty marker)", got, "*chapter1.txt")
+	}
+
+	if err := g.SaveTab(tab); err != nil {
+		t.Fatalf("SaveTab: %v", err)
+	}
+
+	title, _ = chipObjects(t, g.primary.tabBar, 0)
+	if got := chipTitleLabelText(t, title); got != "chapter1.txt" {
+		t.Errorf("title after save = %q, want %q (dirty marker cleared)", got, "chapter1.txt")
+	}
+}
+
 func TestPaneCloseLastTabOnPrimaryLeavesItEmpty(t *testing.T) {
 	fynetest.NewApp()
 
