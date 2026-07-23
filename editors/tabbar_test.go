@@ -16,9 +16,9 @@ func chipObjects(t *testing.T, bar *TabBar, i int) (title *chipTitle, closeGlyph
 	t.Helper()
 	renderer := bar.CreateRenderer()
 	strip := renderer.Objects()[0].(*fyne.Container)
-	chip := strip.Objects[i].(*fyne.Container) // HBox: [highlighted title stack, close glyph]
-	stack := chip.Objects[0].(*fyne.Container) // Stack: [rect, title]
-	return stack.Objects[1].(*chipTitle), chip.Objects[1].(*chipClose)
+	chip := strip.Objects[i].(*fyne.Container)          // Stack: [rect, titleAndClose]
+	titleAndClose := chip.Objects[1].(*fyne.Container)  // zero-gap HBox: [title, closeGlyph]
+	return titleAndClose.Objects[0].(*chipTitle), titleAndClose.Objects[1].(*chipClose)
 }
 
 func TestTabBarOnSelectedFiresOnChipTap(t *testing.T) {
@@ -83,8 +83,8 @@ func TestTabBarActiveTabIsVisuallyDistinguished(t *testing.T) {
 	bar.Refresh()
 
 	strip := renderer.Objects()[0].(*fyne.Container)
-	activeRect := strip.Objects[0].(*fyne.Container).Objects[0].(*fyne.Container).Objects[0].(*canvas.Rectangle)
-	inactiveRect := strip.Objects[1].(*fyne.Container).Objects[0].(*fyne.Container).Objects[0].(*canvas.Rectangle)
+	activeRect := strip.Objects[0].(*fyne.Container).Objects[0].(*canvas.Rectangle)
+	inactiveRect := strip.Objects[1].(*fyne.Container).Objects[0].(*canvas.Rectangle)
 
 	if activeRect.FillColor != chipActiveColor {
 		t.Errorf("active chip rect FillColor = %v, want %v", activeRect.FillColor, chipActiveColor)

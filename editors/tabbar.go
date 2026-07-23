@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -110,8 +111,14 @@ func (t *TabBar) rebuild() {
 }
 
 // newChip builds one tab's visual chip: a title (tap to select,
-// secondary-tap for the context menu) plus a close glyph (tap to close),
-// with a background rectangle behind the title marking Active.
+// secondary-tap for the context menu) beside a close glyph (tap to
+// close). The two sit in a zero-gap layout (layout.NewCustomPaddedHBoxLayout(0)
+// — Fyne's regular HBox always inserts theme padding between children,
+// which read as two separate buttons rather than one) with a single
+// shared background rectangle spanning both, so title+close visually
+// read as one cohesive chip — closer to "close button inside the tab"
+// than two adjacent controls, without the hit-testing complexity of
+// actually overlaying the glyph inside the title's own bounds.
 func (t *TabBar) newChip(tab *Tab) fyne.CanvasObject {
 	title := newChipTitle(tab, t)
 	closeGlyph := newChipClose(tab, t)
@@ -120,9 +127,9 @@ func (t *TabBar) newChip(tab *Tab) fyne.CanvasObject {
 	if t.Active == tab {
 		rect.FillColor = chipActiveColor
 	}
-	highlighted := container.NewStack(rect, title)
 
-	return container.NewHBox(highlighted, closeGlyph)
+	titleAndClose := container.New(layout.NewCustomPaddedHBoxLayout(0), title, closeGlyph)
+	return container.NewStack(rect, titleAndClose)
 }
 
 // selectTab is chipTitle's Tapped handler: sets Active, fires OnSelected,
