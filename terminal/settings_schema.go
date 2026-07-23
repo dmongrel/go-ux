@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"go-ux/db"
+	"go-ux/fontsettings"
 )
 
 // terminalSettingsLabel is the settings-tree node description for this
@@ -74,7 +75,7 @@ func RegisterSettings(database *db.DB) error {
 		return err
 	}
 
-	fontOptions := append([]string{fontFamilyDefault}, DetectMonospaceFonts()...)
+	fontOptions := append([]string{fontFamilyDefault}, fontsettings.DetectMonospaceFonts()...)
 	if err := database.AddProperty(nodeID, KeyFontFamily, "Font", db.PropertyEnum, fontFamilyDefault, fontOptions); err != nil {
 		return err
 	}

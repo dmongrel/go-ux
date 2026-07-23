@@ -14,10 +14,10 @@ func TestNewTabSetsFields(t *testing.T) {
 	if tab.FilePath != "/path/chapter1.md" {
 		t.Errorf("FilePath = %q, want %q", tab.FilePath, "/path/chapter1.md")
 	}
-	if tab.Text != "Once upon a time..." {
-		t.Errorf("Text = %q, want %q", tab.Text, "Once upon a time...")
+	if tab.Text() != "Once upon a time..." {
+		t.Errorf("Text() = %q, want %q", tab.Text(), "Once upon a time...")
 	}
-	if tab.Dirty {
-		t.Errorf("Dirty = true, want false for a freshly created tab")
+	if tab.Dirty() {
+		t.Errorf("Dirty() = true, want false for a freshly created tab")
 	}
 }
