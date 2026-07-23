@@ -4,6 +4,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+
+	"go-ux/fontsettings"
 )
 
 // Pane is one editor sub-component: a TabBar (North, always visible), a
@@ -27,7 +29,9 @@ type Pane struct {
 	active *Tab
 
 	center         *fyne.Container // holds the current active Tab's content; swapped in place on tab switch
-	contentCleanup func()          // unregisters center's current content from its Document's listeners; nil when center is empty
+	contentCleanup func()          // unregisters center's current content from its Document's listeners AND its font-size theme override; nil when center is empty
+
+	fonts *fontsettings.State // this Pane's Group's font-size state (font.go); a standalone default when group is nil (pure pane-level tests)
 }
 
 // newPane builds a Pane wired into group (which may be nil in pure
@@ -36,6 +40,11 @@ type Pane struct {
 // AddTab.
 func newPane(group *Group, id string, isPrimary bool) *Pane {
 	p := &Pane{id: id, group: group, isPrimary: isPrimary}
+	if group != nil {
+		p.fonts = group.fonts
+	} else {
+		p.fonts = fontsettings.NewState(fontsettings.DefaultFontSettings)
+	}
 	p.tabBar = NewTabBar()
 	p.tabBar.OnSelected = p.selectTab
 	p.tabBar.OnClosed = p.closeTabRequested
@@ -92,7 +101,7 @@ func (p *Pane) setActive(tab *Tab) {
 
 	p.active = tab
 	if tab != nil {
-		content, cleanup := newDocumentContent(tab, p)
+		content, cleanup := newDocumentContent(tab, p, p.fonts)
 		p.center.Objects = []fyne.CanvasObject{content}
 		p.contentCleanup = cleanup
 	} else {

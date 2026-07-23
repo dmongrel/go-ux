@@ -1,0 +1,134 @@
+package editors
+
+import (
+	"image/color"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+
+	"fyne.io/fyne/v2/driver/desktop"
+
+	"go-ux/fontsettings"
+)
+
+// fontSizeScrollStep is how many points the content font size changes per
+// mouse-wheel tick while Ctrl is held — matches
+// terminal/widget.go's fontSizeScrollStep so Ctrl+scroll feels the same in
+// both packages.
+const fontSizeScrollStep = 1
+
+// sizeOverrideTheme wraps a base fyne.Theme, overriding only
+// theme.SizeNameText to reflect a live *fontsettings.State — every other
+// name (colors, icons, other sizes) delegates to base unchanged. This is
+// what makes the content area's font size independently adjustable per
+// Group (via container.NewThemeOverride in pane.go) rather than a single
+// value shared by the whole app the way changing Fyne's global theme
+// would be.
+type sizeOverrideTheme struct {
+	base  fyne.Theme
+	fonts *fontsettings.State
+}
+
+func (t *sizeOverrideTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	return t.base.Color(name, variant)
+}
+
+func (t *sizeOverrideTheme) Font(style fyne.TextStyle) fyne.Resource {
+	return t.base.Font(style)
+}
+
+func (t *sizeOverrideTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
+	return t.base.Icon(name)
+}
+
+func (t *sizeOverrideTheme) Size(name fyne.ThemeSizeName) float32 {
+	if name == theme.SizeNameText {
+		return float32(t.fonts.Current().Size)
+	}
+	return t.base.Size(name)
+}
+
+// newContentThemeOverride wraps content in a container.NewThemeOverride
+// using fonts' current Size for theme.SizeNameText, and registers a
+// listener (keyed by key, typically the *Pane) so future fonts.Set calls
+// (from Ctrl+scroll, see editorEntry below, or a future settings window)
+// refresh the override live. Callers (pane.go) must call the returned
+// cleanup func when the content is torn down, mirroring
+// newDocumentContent's own cleanup contract.
+func newContentThemeOverride(content fyne.CanvasObject, fonts *fontsettings.State, key any) (wrapped fyne.CanvasObject, cleanup func()) {
+	override := container.NewThemeOverride(content, &sizeOverrideTheme{base: theme.DefaultTheme(), fonts: fonts})
+	fonts.RegisterListener(key, func(fontsettings.FontSettings) {
+		override.Refresh()
+	})
+	return override, func() { fonts.UnregisterListener(key) }
+}
+
+// editorEntry wraps widget.Entry solely to intercept Ctrl+scroll for
+// live font-size adjustment (mirrors terminal/widget.go's
+// Session.KeyDown/KeyUp/Scrolled). Implementing Scrolled ourselves means
+// Fyne routes every wheel event over this widget to us instead of
+// bubbling it to the ancestor container.Scroll that actually scrolls the
+// content — so a plain (non-Ctrl) scroll must be forwarded to that
+// ancestor manually via forwardScroll, or scrolling the document would
+// silently stop working.
+type editorEntry struct {
+	*widget.Entry
+	ctrlHeld      bool
+	fonts         *fontsettings.State
+	forwardScroll func(*fyne.ScrollEvent)
+}
+
+func newEditorEntry(fonts *fontsettings.State, forwardScroll func(*fyne.ScrollEvent)) *editorEntry {
+	e := &editorEntry{Entry: widget.NewMultiLineEntry(), fonts: fonts, forwardScroll: forwardScroll}
+	e.ExtendBaseWidget(e)
+	return e
+}
+
+// KeyDown/KeyUp track Ctrl's held state, then delegate to Entry's own
+// KeyDown/KeyUp so its existing shortcut handling (shift-select, etc.)
+// still works.
+func (e *editorEntry) KeyDown(ev *fyne.KeyEvent) {
+	if ev.Name == desktop.KeyControlLeft || ev.Name == desktop.KeyControlRight {
+		e.ctrlHeld = true
+	}
+	e.Entry.KeyDown(ev)
+}
+
+func (e *editorEntry) KeyUp(ev *fyne.KeyEvent) {
+	if ev.Name == desktop.KeyControlLeft || ev.Name == desktop.KeyControlRight {
+		e.ctrlHeld = false
+	}
+	e.Entry.KeyUp(ev)
+}
+
+// Scrolled (fyne.Scrollable) adjusts fonts' live Size when Ctrl is held
+// (one fontSizeScrollStep per wheel tick, clamped by fontsettings.State.Set
+// itself); otherwise forwards the event to the ancestor Scroll so normal
+// scrolling keeps working (see the type doc comment).
+func (e *editorEntry) Scrolled(ev *fyne.ScrollEvent) {
+	if !e.ctrlHeld {
+		if e.forwardScroll != nil {
+			e.forwardScroll(ev)
+		}
+		return
+	}
+
+	current := e.fonts.Current()
+	if ev.Scrolled.DY < 0 {
+		current.Size -= fontSizeScrollStep
+	} else {
+		current.Size += fontSizeScrollStep
+	}
+	e.fonts.Set(current)
+}
+
+// FocusLost clears ctrlHeld — mirrors terminal/widget.go's Session.FocusLost:
+// Alt-Tabbing away while Ctrl is physically held can happen without a
+// matching KeyUp ever being delivered, and without this a later plain
+// scroll after refocusing would be misread as a Ctrl+scroll font change.
+func (e *editorEntry) FocusLost() {
+	e.ctrlHeld = false
+	e.Entry.FocusLost()
+}

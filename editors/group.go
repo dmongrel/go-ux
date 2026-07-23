@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"go-ux/db"
+	"go-ux/fontsettings"
 )
 
 // Group is the embeddable parent layout component: it owns the current
@@ -52,13 +53,20 @@ type Group struct {
 	database  *db.DB // nil means "no persistence" — matches terminal's NewWindow (no db) vs NewWindowFromSettings (db) pattern; every method below must stay nil-safe
 	groupID   string // caller-chosen, unique per Group instance persisted independently — meaningless if database is nil
 	restoring bool   // held true while NewGroupFromSettings is replaying a persisted layout (AddTab etc. run as part of that replay) so notifyChanged doesn't fire mid-restore and overwrite the still-under-construction tree with g.root's stale pre-restore shape — same guard pattern as treestate.restoring
+
+	// fonts is this Group's own independent font-size state (font.go),
+	// Ctrl+scroll-adjustable from any Pane's content area — unlike
+	// terminal's single package-global FontSettings shared by every open
+	// Session everywhere, each Group gets its own, per the design plan's
+	// "independent per Group instance" decision.
+	fonts *fontsettings.State
 }
 
 // NewGroup builds a Group with a single, empty primary Pane. Call AddTab
 // to populate it (the Phase 1 demo harness adds 3 placeholder tabs this
 // way).
 func NewGroup(app fyne.App) *Group {
-	g := &Group{app: app}
+	g := &Group{app: app, fonts: fontsettings.NewState(fontsettings.DefaultFontSettings)}
 	g.primary = newPane(g, "pane-0", true)
 	g.root = leaf(g.primary)
 	g.container = container.NewStack(g.primary)

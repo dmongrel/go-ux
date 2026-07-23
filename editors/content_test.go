@@ -7,17 +7,36 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 	fynetest "fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
+
+	"go-ux/fontsettings"
 )
 
-func newDocumentContentParts(t *testing.T, tab *Tab, key any) (entry *widget.Entry, sidebar *gutter, cleanup func()) {
+func newTestFonts() *fontsettings.State {
+	return fontsettings.NewState(fontsettings.DefaultFontSettings)
+}
+
+// unwrapDocumentContent drills through newDocumentContent's
+// ThemeOverride(Stack(rect, Scroll(Border(entry, sidebar)))) shape down to
+// the individual pieces tests need.
+func unwrapDocumentContent(t *testing.T, obj fyne.CanvasObject) *fyne.Container {
 	t.Helper()
-	obj, cleanup := newDocumentContent(tab, key)
-	stack, ok := obj.(*fyne.Container)
+	override, ok := obj.(*container.ThemeOverride)
 	if !ok {
-		t.Fatalf("newDocumentContent returned %T, want *fyne.Container", obj)
+		t.Fatalf("newDocumentContent returned %T, want *container.ThemeOverride", obj)
 	}
+	stack, ok := override.Content.(*fyne.Container)
+	if !ok {
+		t.Fatalf("override.Content is %T, want *fyne.Container", override.Content)
+	}
+	return stack
+}
+
+func newDocumentContentParts(t *testing.T, tab *Tab, key any) (entry *editorEntry, sidebar *gutter, cleanup func()) {
+	t.Helper()
+	obj, cleanup := newDocumentContent(tab, key, newTestFonts())
+	stack := unwrapDocumentContent(t, obj)
 	scroll, ok := stack.Objects[1].(*container.Scroll)
 	if !ok {
 		t.Fatalf("stack.Objects[1] is %T, want *container.Scroll", stack.Objects[1])
@@ -26,9 +45,9 @@ func newDocumentContentParts(t *testing.T, tab *Tab, key any) (entry *widget.Ent
 	if !ok {
 		t.Fatalf("scroll content is %T, want *fyne.Container (Border)", scroll.Content)
 	}
-	entry, ok = row.Objects[0].(*widget.Entry)
+	entry, ok = row.Objects[0].(*editorEntry)
 	if !ok {
-		t.Fatalf("row.Objects[0] is %T, want *widget.Entry", row.Objects[0])
+		t.Fatalf("row.Objects[0] is %T, want *editorEntry", row.Objects[0])
 	}
 	sidebar, ok = row.Objects[1].(*gutter)
 	if !ok {
@@ -37,7 +56,7 @@ func newDocumentContentParts(t *testing.T, tab *Tab, key any) (entry *widget.Ent
 	return entry, sidebar, cleanup
 }
 
-func newDocumentContentEntry(t *testing.T, tab *Tab, key any) (*widget.Entry, func()) {
+func newDocumentContentEntry(t *testing.T, tab *Tab, key any) (*editorEntry, func()) {
 	t.Helper()
 	entry, _, cleanup := newDocumentContentParts(t, tab, key)
 	return entry, cleanup
@@ -147,10 +166,10 @@ func TestNewDocumentContentBackgroundIsDarkenedNotBlack(t *testing.T) {
 	fynetest.NewApp()
 
 	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "text")
-	obj, cleanup := newDocumentContent(tab, "key1")
+	obj, cleanup := newDocumentContent(tab, "key1", newTestFonts())
 	defer cleanup()
 
-	stack := obj.(*fyne.Container)
+	stack := unwrapDocumentContent(t, obj)
 	rect, ok := stack.Objects[0].(*canvas.Rectangle)
 	if !ok {
 		t.Fatalf("stack.Objects[0] is %T, want *canvas.Rectangle", stack.Objects[0])
@@ -165,5 +184,27 @@ func TestNewDocumentContentBackgroundIsDarkenedNotBlack(t *testing.T) {
 	}
 	if got.A == 0 {
 		t.Fatalf("background is fully transparent: %+v", got)
+	}
+}
+
+func TestNewDocumentContentFontSizeChangeResizesText(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "text")
+	fonts := newTestFonts()
+	obj, cleanup := newDocumentContent(tab, "key1", fonts)
+	defer cleanup()
+
+	override, ok := obj.(*container.ThemeOverride)
+	if !ok {
+		t.Fatalf("newDocumentContent returned %T, want *container.ThemeOverride", obj)
+	}
+
+	before := override.Theme.Size(theme.SizeNameText)
+	fonts.Set(fontsettings.FontSettings{Size: fonts.Current().Size + 5, LineHeight: 1.0, ColumnWidth: 1.0})
+	after := override.Theme.Size(theme.SizeNameText)
+
+	if after == before {
+		t.Errorf("theme text size did not change after fonts.Set: before=%v after=%v", before, after)
 	}
 }

@@ -7,24 +7,31 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+
+	"go-ux/fontsettings"
 )
 
 // newDocumentContent builds a Pane's center content area for tab: an
 // editable, multi-line text widget bound to tab.Doc, kept in sync with any
 // other Pane showing the same Document (split.go's "same underlying
-// document, synced live" split semantics). key identifies the caller (see
-// Document.RegisterListener) — pane.go passes its own *Pane, since only
-// one content widget is live per Pane at a time. Callers MUST call the
-// returned cleanup func when this content is no longer shown (e.g. the
-// active tab changes), or the Document will keep pushing updates into an
-// orphaned widget indefinitely.
-func newDocumentContent(tab *Tab, key any) (content fyne.CanvasObject, cleanup func()) {
-	entry := widget.NewMultiLineEntry()
+// document, synced live" split semantics), Ctrl+scroll-adjustable in font
+// size via fonts (font.go). key identifies the caller (see
+// Document.RegisterListener/fontsettings.State.RegisterListener) — pane.go
+// passes its own *Pane, since only one content widget is live per Pane at
+// a time. Callers MUST call the returned cleanup func when this content is
+// no longer shown (e.g. the active tab changes), or the Document/font
+// state will keep pushing updates into an orphaned widget indefinitely.
+func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State) (content fyne.CanvasObject, cleanup func()) {
+	var scroll *container.Scroll
+	entry := newEditorEntry(fonts, func(ev *fyne.ScrollEvent) {
+		if scroll != nil {
+			scroll.Scrolled(ev)
+		}
+	})
 	entry.Wrapping = fyne.TextWrapWord
 	entry.SetText(tab.Doc.Text())
 
-	sidebar := newGutter(tab.Doc.Text(), entry)
+	sidebar := newGutter(tab.Doc.Text(), entry.Entry)
 
 	// updating guards against Entry.SetText (driven by a Document
 	// notification below) re-firing OnChanged back into Document.SetText —
@@ -54,8 +61,14 @@ func newDocumentContent(tab *Tab, key any) (content fyne.CanvasObject, cleanup f
 	row := container.NewBorder(nil, nil, sidebar, nil, entry)
 
 	bg := canvas.NewRectangle(darkenedContentBackground())
-	stack := container.NewStack(bg, container.NewScroll(row))
-	return stack, func() { tab.Doc.UnregisterListener(key) }
+	scroll = container.NewScroll(row)
+	stack := container.NewStack(bg, scroll)
+
+	themed, themeCleanup := newContentThemeOverride(stack, fonts, key)
+	return themed, func() {
+		tab.Doc.UnregisterListener(key)
+		themeCleanup()
+	}
 }
 
 // darkenedContentBackground returns the current theme's background color,
