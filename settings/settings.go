@@ -19,6 +19,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"go-ux/db"
+	"go-ux/treestate"
 )
 
 // componentID identifies the settings window itself for UI-state persistence
@@ -90,6 +91,13 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 	w.win = win
 
 	w.tree = w.buildTree()
+	tracker := treestate.Track(database, componentID+".tree", w.tree, treestate.Options{
+		Exists: func(uid string) bool {
+			_, ok := w.byID[uid]
+			return ok
+		},
+		OnSelected: w.selectNode,
+	})
 	w.formHolder = container.NewStack()
 
 	search := widget.NewEntry()
@@ -119,6 +127,7 @@ func NewWindow(app fyne.App, database *db.DB) (*Window, error) {
 	win.SetContent(container.NewBorder(nil, buttons, nil, nil, w.split))
 
 	w.restoreUIState()
+	tracker.Restore()
 	win.SetCloseIntercept(func() {
 		w.saveUIState()
 		win.Close()
@@ -220,7 +229,6 @@ func (w *Window) buildTree() *widget.Tree {
 			rect.Refresh()
 		},
 	)
-	t.OnSelected = w.selectNode
 	return t
 }
 
@@ -353,7 +361,11 @@ func (w *Window) applySearch(query string) {
 	w.propMatch = propMatch
 
 	w.tree.Refresh()
-	w.tree.OpenAllBranches()
+	for uid := range w.byID {
+		if len(w.byParent[uid]) > 0 {
+			w.tree.OpenBranch(uid)
+		}
+	}
 	if w.selectedUID != "" {
 		w.renderProperties(w.selectedUID)
 	}
@@ -444,4 +456,29 @@ func (w *Window) saveUIState() {
 	if err := w.db.SaveUIState(componentID, blob); err != nil {
 		log.Printf("settings: save ui state: %v", err)
 	}
+}
+
+// TreeForTest exposes the underlying *widget.Tree for settings_test's
+// external test package (e.g. to check IsBranchOpen after a restore).
+func (w *Window) TreeForTest() *widget.Tree {
+	return w.tree
+}
+
+// SelectedNodeForTest exposes the currently-selected tree node's UID, for
+// settings_test's external test package.
+func (w *Window) SelectedNodeForTest() string {
+	return w.selectedUID
+}
+
+// TreeComponentIDForTest exposes the db component ID used for tree-state
+// persistence, for settings_test's external test package to write a
+// synthetic stale blob against.
+func TreeComponentIDForTest() string {
+	return componentID + ".tree"
+}
+
+// ApplySearchForTest exposes applySearch for settings_test's external test
+// package (e.g. to verify search-driven branch expansion persists).
+func (w *Window) ApplySearchForTest(query string) {
+	w.applySearch(query)
 }
