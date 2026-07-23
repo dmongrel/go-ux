@@ -8,6 +8,8 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/fsnotify/fsnotify"
+
 	"go-ux/db"
 	"go-ux/fontsettings"
 )
@@ -60,13 +62,28 @@ type Group struct {
 	// Session everywhere, each Group gets its own, per the design plan's
 	// "independent per Group instance" decision.
 	fonts *fontsettings.State
+
+	// fileWatchMode is FileWatchModeAuto or FileWatchModeNotify
+	// (settings_schema.go/watch.go), read once from database at
+	// NewGroupFromSettings time (default FileWatchModeNotify for
+	// NewGroup's no-database case — see watch.go's doc comment on why it's
+	// not re-synced live via ApplyEditorSettings).
+	fileWatchMode string
+
+	// watcher/watchedFiles are file-watching state (watch.go) — watcher is
+	// lazily created on the first watched file (nil until then);
+	// watchedFiles tracks which paths have already been added to it so
+	// startWatching doesn't double-Add the same path (e.g. after a split
+	// copies a Tab into a second Pane).
+	watcher      *fsnotify.Watcher
+	watchedFiles map[string]bool
 }
 
 // NewGroup builds a Group with a single, empty primary Pane. Call AddTab
 // to populate it (the Phase 1 demo harness adds 3 placeholder tabs this
 // way).
 func NewGroup(app fyne.App) *Group {
-	g := &Group{app: app, fonts: fontsettings.NewState(fontsettings.DefaultFontSettings)}
+	g := &Group{app: app, fonts: fontsettings.NewState(fontsettings.DefaultFontSettings), fileWatchMode: FileWatchModeNotify}
 	g.primary = newPane(g, "pane-0", true)
 	g.root = leaf(g.primary)
 	g.container = container.NewStack(g.primary)
@@ -76,6 +93,26 @@ func NewGroup(app fyne.App) *Group {
 
 func (g *Group) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(g.container)
+}
+
+// Close stops g's background file watcher (watch.go), if one was ever
+// started (startWatching creates it lazily on the first watched file —
+// see its own doc comment on why there's no per-Tab stop, only this
+// whole-Group one). Safe to call even if no file was ever watched.
+//
+// Callers embedding a Group in a real window should call this when the
+// window closes, so the watch.go goroutine doesn't keep running (and
+// potentially calling fyne.Do against a torn-down app) indefinitely.
+// Tests that call OpenFile/ProposeDiff (which start real, live fsnotify
+// watches on real files) MUST call this via t.Cleanup, or the watcher's
+// background goroutine can outlive the test and fire fyne.Do against a
+// DIFFERENT, later test's fynetest.NewApp() — this was a real, observed
+// failure (a later test's south bar rendering panicked from a stale
+// watcher's delayed event) before Close existed.
+func (g *Group) Close() {
+	if g.watcher != nil {
+		g.watcher.Close()
+	}
 }
 
 // notifyChanged is called by Pane after every tab/structural mutation. If

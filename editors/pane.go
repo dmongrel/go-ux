@@ -1,6 +1,8 @@
 package editors
 
 import (
+	"os"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -78,6 +80,7 @@ func (p *Pane) AddTab(tab *Tab) {
 	p.tabs = append(p.tabs, tab)
 	p.setActive(tab)
 	if p.group != nil {
+		p.group.startWatching(tab)
 		p.group.notifyChanged()
 	}
 }
@@ -175,6 +178,24 @@ func (p *Pane) showDiffReview(tab *Tab) {
 func (p *Pane) exitDiffReview() {
 	p.southBar.SetMode(SouthBarHidden, nil, nil)
 	p.rebuildCenterContent()
+}
+
+// showFileChangedNotice puts southBar into SouthBarFileChanged mode over
+// tab: "Load from Disk" re-reads tab.FilePath and applies it to the
+// Document (live-syncing any other Pane showing the same Tab, same as any
+// other Document edit); "Keep from Memory" just dismisses the notice,
+// leaving the Document as-is. Called by Group.handleFileChanged
+// (watch.go) for every Pane currently showing tab as active.
+func (p *Pane) showFileChangedNotice(tab *Tab) {
+	p.southBar.SetMode(SouthBarFileChanged, func() {
+		data, err := os.ReadFile(tab.FilePath)
+		if err == nil {
+			tab.Doc.SetText(string(data))
+		}
+		p.southBar.SetMode(SouthBarHidden, nil, nil)
+	}, func() {
+		p.southBar.SetMode(SouthBarHidden, nil, nil)
+	})
 }
 
 // togglePreview is tabBar.OnTogglePreview's handler: flips previewMode and

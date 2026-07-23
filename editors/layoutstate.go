@@ -32,6 +32,11 @@ func NewGroupFromSettings(app fyne.App, database *db.DB, groupID string) *Group 
 		return g
 	}
 
+	if font, fileWatchMode, found, err := readEditorSettings(database, groupID); err == nil && found {
+		g.fonts.Set(font)
+		g.fileWatchMode = fileWatchMode
+	}
+
 	panes, tabs, err := database.LoadEditorLayout(groupID)
 	if err != nil || len(panes) == 0 {
 		// Nothing saved yet (or a load error, treated the same as "nothing

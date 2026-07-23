@@ -20,6 +20,7 @@ func writeTempFile(t *testing.T, name, content string) string {
 func TestOpenFileReadsFromDisk(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 	path := writeTempFile(t, "chapter1.txt", "hello from disk")
 
 	tab, err := g.OpenFile(path)
@@ -40,6 +41,7 @@ func TestOpenFileReadsFromDisk(t *testing.T) {
 func TestOpenFileReturnsExistingTabWithoutDuplicating(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 	path := writeTempFile(t, "chapter1.txt", "hello")
 
 	tab1, err := g.OpenFile(path)
@@ -62,6 +64,7 @@ func TestOpenFileReturnsExistingTabWithoutDuplicating(t *testing.T) {
 func TestOpenFileMissingFileReturnsError(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 
 	_, err := g.OpenFile(filepath.Join(t.TempDir(), "does-not-exist.txt"))
 	if err == nil {
@@ -72,6 +75,7 @@ func TestOpenFileMissingFileReturnsError(t *testing.T) {
 func TestProposeDiffSwitchesActivePaneIntoDiffReview(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 	path := writeTempFile(t, "chapter1.txt", "old text")
 
 	if err := g.ProposeDiff(path, "new text"); err != nil {
@@ -96,12 +100,20 @@ func TestProposeDiffSwitchesActivePaneIntoDiffReview(t *testing.T) {
 func TestAcceptDiffAppliesTextAndWritesToDisk(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 	path := writeTempFile(t, "chapter1.txt", "old text")
 
 	if err := g.ProposeDiff(path, "new text"); err != nil {
 		t.Fatalf("ProposeDiff: %v", err)
 	}
 	tab := g.primary.active
+
+	// Stop the real file watcher before Accept writes to path below — a
+	// genuine fsnotify event racing with this test's own goroutine is a
+	// real, observed concurrent-widget-mutation crash in Fyne's test
+	// driver (see watch_test.go's package doc comment for the full
+	// explanation); the watcher isn't needed for Accept's own logic.
+	g.Close()
 
 	g.acceptDiff(tab)
 
@@ -126,6 +138,7 @@ func TestAcceptDiffAppliesTextAndWritesToDisk(t *testing.T) {
 func TestCancelDiffLeavesDocumentAndDiskUntouched(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 	path := writeTempFile(t, "chapter1.txt", "old text")
 
 	if err := g.ProposeDiff(path, "new text"); err != nil {
@@ -156,6 +169,7 @@ func TestCancelDiffLeavesDocumentAndDiskUntouched(t *testing.T) {
 func TestProposeDiffOnAlreadyOpenTabReusesIt(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
+	t.Cleanup(g.Close)
 	path := writeTempFile(t, "chapter1.txt", "original")
 
 	opened, err := g.OpenFile(path)
