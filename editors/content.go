@@ -32,6 +32,7 @@ func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State) (content f
 	entry.SetText(tab.Doc.Text())
 
 	sidebar := newGutter(tab.Doc.Text(), entry.Entry)
+	entry.OnCursorChanged = func() { sidebar.SetActiveLine(entry.CursorRow) }
 
 	// updating guards against Entry.SetText (driven by a Document
 	// notification below) re-firing OnChanged back into Document.SetText —

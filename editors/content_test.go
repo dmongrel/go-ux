@@ -143,8 +143,13 @@ func TestNewDocumentContentGutterShowsLineNumbers(t *testing.T) {
 	_, sidebar, cleanup := newDocumentContentParts(t, tab, "key1")
 	defer cleanup()
 
-	if sidebar.label.Text != "1\n2\n3" {
-		t.Errorf("gutter text = %q, want %q", sidebar.label.Text, "1\n2\n3")
+	if len(sidebar.rich.Segments) != 3 {
+		t.Fatalf("got %d gutter segments, want 3", len(sidebar.rich.Segments))
+	}
+	for i, want := range []string{"1", "2", "3"} {
+		if got := gutterLineText(t, sidebar, i); got != want {
+			t.Errorf("gutter segment %d = %q, want %q", i, got, want)
+		}
 	}
 }
 
@@ -157,8 +162,13 @@ func TestNewDocumentContentGutterUpdatesAsTextChanges(t *testing.T) {
 
 	entry.SetText("one\ntwo\nthree\nfour")
 
-	if sidebar.label.Text != "1\n2\n3\n4" {
-		t.Errorf("gutter text = %q, want %q", sidebar.label.Text, "1\n2\n3\n4")
+	if len(sidebar.rich.Segments) != 4 {
+		t.Fatalf("got %d gutter segments, want 4", len(sidebar.rich.Segments))
+	}
+	for i, want := range []string{"1", "2", "3", "4"} {
+		if got := gutterLineText(t, sidebar, i); got != want {
+			t.Errorf("gutter segment %d = %q, want %q", i, got, want)
+		}
 	}
 }
 
