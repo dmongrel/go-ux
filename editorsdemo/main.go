@@ -88,16 +88,22 @@ func main() {
 	}
 	defer database.Close()
 
-	// See terminaldemo's identical call for why this is here: declares
-	// this app as fully using the fyne.Do threading model, avoiding a
-	// "not migrated" warning on every launch. editors' Phase 1 code has no
-	// background goroutines of its own yet, but this is cheap insurance
-	// against Phase 2 (file watching, etc.) needing it later without
-	// anyone remembering to add it then.
+	// See terminaldemo's identical call for why this is here: declares this
+	// app as fully using the fyne.Do threading model, avoiding a "not
+	// migrated" warning on every launch — file watching's background
+	// goroutine (watch.go) is exactly the kind of off-main-goroutine UI
+	// work this exists for.
 	app.SetMetadata(fyne.AppMetadata{Migrations: map[string]bool{"fyneDo": true}})
 	fyneApp := app.NewWithID("go-ux.editorsdemo")
 
+	// Idempotent — seeds the "Editors: <groupID>" settings node (font
+	// size, file_watch_mode) on a fresh db, no-ops if already present.
+	if err := editors.RegisterSettings(database, groupID); err != nil {
+		log.Printf("editors.RegisterSettings: %v", err)
+	}
+
 	group := editors.NewGroupFromSettings(fyneApp, database, groupID)
+	defer group.Close() // stops the file-watching goroutine on exit
 
 	// Seed 3 placeholder tabs into the primary pane only on a genuinely
 	// fresh db (nothing persisted yet for groupID) — on a second run
