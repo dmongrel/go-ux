@@ -7,12 +7,14 @@ built for a novel-writing / prose-editing use case, plus a Go API surface
 an AI coding assistant (via a host app's own tooling) can drive to propose
 a diff for human review.
 
-**Phase 1 (current state, this document):** the layout/interaction shell
-— tab bar, split/move-pane menus, resize bars, persisted layout — with a
-placeholder, read-only, static-text content area. No real text editing,
-no file I/O, no diff review, no markdown preview, no font settings, and no
-file watching yet — those are deferred to later phases so the interaction
-surface could be verified independently first.
+**Current state (this document):** the layout/interaction shell — tab bar,
+split/move-pane menus, resize bars, persisted layout — plus a real,
+editable, Document-backed content area (see "Documents and editing"
+below). No file I/O (content is seeded in memory by the caller, not loaded
+from disk), no line numbers/soft wrap, no diff review, no markdown
+preview, no font settings, and no file watching yet — those are deferred
+to later phases so the interaction surface could be verified independently
+first.
 
 ## Public API
 
@@ -29,6 +31,9 @@ func (g *Group) MoveDown(source *Pane, tab *Tab)
 // it can be dropped straight into any Fyne container/window.
 
 func NewTab(id, title, filePath, text string) *Tab
+
+func (t *Tab) Text() string
+func (t *Tab) Dirty() bool
 ```
 
 `NewGroup` builds a `Group` — the embeddable parent layout component —
@@ -52,9 +57,29 @@ to open.
 
 A `Group` shows 1–4 "editor sub-components" (`Pane`s), each with a North
 tab bar (always visible; see "Splitting and moving" below for how new
-panes appear), a placeholder center content area (Phase 1), and a South
-bar (currently always hidden — Phase 2's diff-review and file-watch
-notifications will drive it).
+panes appear), an editable center content area (see "Documents and
+editing" below), and a South bar (currently always hidden — a later phase's
+diff-review and file-watch notifications will drive it).
+
+## Documents and editing
+
+Every `Tab` points at a `Document` — the actual shared text buffer,
+separate from the `Tab` UI entry itself. `NewTab`'s `text` argument seeds a
+fresh `Document`. `Tab.Text()`/`Tab.Dirty()` read the current state of that
+`Document`.
+
+The content area is a real, editable multi-line text widget bound to its
+Tab's `Document`. When two `Pane`s show the same `Document` (i.e. after a
+Split, since Split copies the same `Tab` — and so the same `Document` —
+into the new `Pane`), typing in either one's content area updates the
+other immediately: `Document` keeps a listener registry, and each `Pane`'s
+content widget registers/unregisters itself as its active tab changes.
+
+There's no file I/O yet — `Document` is purely an in-memory buffer. A
+caller wanting to load a file's contents reads it themselves and passes
+the text to `NewTab`; there's no `OpenFile`-from-disk helper yet (that,
+along with `Document.Dirty()`-aware save/reload and file watching, is a
+later phase).
 
 ## Splitting and moving
 
@@ -74,10 +99,9 @@ Right**, **Move Down**, and **Close Tab**.
   split. The original/primary pane can never be closed this way, even when
   empty.
 
-Phase 1's placeholder content area has no real document sharing yet, so
-"split" doesn't yet show synced live edits across panes the way it
-eventually will (see the design plan) — that lands with Phase 2's real
-text backend.
+Since Split copies the same `Tab` (and so the same `Document`) into the new
+`Pane`, edits made in either pane after a split show up in both
+immediately — see "Documents and editing" above.
 
 ## Persistence
 
@@ -140,10 +164,10 @@ to see the layout come back exactly as it was left.
 
 ## Deferred (not yet built)
 
-Real text editing (line numbers, soft wrap, markdown preview via
-goldmark), font settings (a shared `Ctrl+scroll`-adjustable font-size
-pattern reused from `go-ux/terminal`, factored into a new shared
-`fontsettings` package), diff review (via `go-difflib`) plus an external
-API for a host app's own AI-assistant tooling to propose edits, and file
-watching (via `fsnotify`, auto-load or notify on external changes) are all
-designed but not yet implemented.
+Line numbers, soft wrap, and markdown preview (via goldmark); font
+settings (a shared `Ctrl+scroll`-adjustable font-size pattern reused from
+`go-ux/terminal`, factored into a new shared `fontsettings` package); file
+I/O (loading from / saving to disk) and file watching (via `fsnotify`,
+auto-load or notify on external changes); and diff review (via
+`go-difflib`) plus an external API for a host app's own AI-assistant
+tooling to propose edits. All designed but not yet implemented.
