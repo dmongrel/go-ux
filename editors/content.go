@@ -10,29 +10,46 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// NewPlaceholderContent builds the Phase 1 stand-in for a Pane's center
-// content area: a read-only, non-interactive display of tab's placeholder
-// text. Phase 2 replaces this with a real editable text widget backed by
-// a shared Document (line numbers, soft wrap, markdown preview toggle,
-// etc. — see the design plan) — this function's signature and the fact
-// that it returns a plain fyne.CanvasObject are deliberately minimal so
-// that swap doesn't ripple into pane.go's composition code.
-//
-// Wrapped in a container.NewScroll rather than returned bare: an
-// unwrapped widget.Label's MinSize grows to fit its full text (Fyne has
-// no "clip and let the parent decide" mode for Label), which propagates
-// up through the Pane's Border layout and the surrounding container.Split
-// and forces the whole window to grow to accommodate long text instead of
-// scrolling — the same class of bug terminal/widget.go's sessionRenderer
-// MinSize fix addresses for the terminal grid. Scroll's own MinSize is a
-// small fixed value independent of its content's size, so it absorbs the
-// overflow instead of forcing growth, and gives scrollbars for free.
-func NewPlaceholderContent(tab *Tab) fyne.CanvasObject {
-	label := widget.NewLabel(tab.Text)
-	label.Wrapping = fyne.TextWrapWord
+// newDocumentContent builds a Pane's center content area for tab: an
+// editable, multi-line text widget bound to tab.Doc, kept in sync with any
+// other Pane showing the same Document (split.go's "same underlying
+// document, synced live" split semantics). key identifies the caller (see
+// Document.RegisterListener) — pane.go passes its own *Pane, since only
+// one content widget is live per Pane at a time. Callers MUST call the
+// returned cleanup func when this content is no longer shown (e.g. the
+// active tab changes), or the Document will keep pushing updates into an
+// orphaned widget indefinitely.
+func newDocumentContent(tab *Tab, key any) (content fyne.CanvasObject, cleanup func()) {
+	entry := widget.NewMultiLineEntry()
+	entry.Wrapping = fyne.TextWrapWord
+	entry.SetText(tab.Doc.Text())
+
+	// updating guards against Entry.SetText (driven by a Document
+	// notification below) re-firing OnChanged back into Document.SetText —
+	// Document.SetText's own no-op guard (see document.go) already breaks
+	// the loop when the text matches, but this also avoids the redundant
+	// SetText call itself, which would otherwise reset the cursor to the
+	// start of the text on every keystroke.
+	updating := false
+	entry.OnChanged = func(text string) {
+		if updating {
+			return
+		}
+		tab.Doc.SetText(text)
+	}
+
+	tab.Doc.RegisterListener(key, func(text string) {
+		if entry.Text == text {
+			return
+		}
+		updating = true
+		entry.SetText(text)
+		updating = false
+	})
 
 	bg := canvas.NewRectangle(darkenedContentBackground())
-	return container.NewStack(bg, container.NewScroll(label))
+	stack := container.NewStack(bg, container.NewScroll(entry))
+	return stack, func() { tab.Doc.UnregisterListener(key) }
 }
 
 // darkenedContentBackground returns the current theme's background color,

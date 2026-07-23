@@ -1,27 +1,30 @@
 package editors
 
-// Tab is one open document's presence in one Pane: a title, a dirty
-// (unsaved-changes) flag, and — Phase 1 only — static placeholder text
-// (Phase 2 replaces this with a reference to a shared Document buffer;
-// see the design plan's "shared document, split panes stay synced"
-// decision — Tab itself is deliberately kept this simple in Phase 1 so
-// that swap-in later doesn't require reshaping anything that depends on
-// Tab's other fields).
+// Tab is one open document's presence in one Pane: a title and a
+// reference to the shared Document buffer holding its actual text (see
+// document.go — split.go's split semantics require the same underlying
+// Document to stay in sync across every Pane showing it, which is why the
+// text itself lives on Document rather than directly on Tab).
 type Tab struct {
 	ID       string // stable identifier — used by menus/persistence to refer to a specific tab without relying on slice position
 	Title    string
 	FilePath string
-	Dirty    bool
-	Text     string // Phase 1 placeholder content shown by content.go
+	Doc      *Document
 }
 
-// NewTab builds a Tab with the given identity/content fields; Dirty starts
-// false (a freshly opened tab has no unsaved changes yet).
+// Text returns the Tab's current content, delegating to its Document.
+func (t *Tab) Text() string { return t.Doc.Text() }
+
+// Dirty reports whether the Tab's Document has unsaved changes.
+func (t *Tab) Dirty() bool { return t.Doc.Dirty() }
+
+// NewTab builds a Tab with the given identity fields and a fresh Document
+// seeded with text.
 func NewTab(id, title, filePath, text string) *Tab {
 	return &Tab{
 		ID:       id,
 		Title:    title,
 		FilePath: filePath,
-		Text:     text,
+		Doc:      NewDocument(text),
 	}
 }

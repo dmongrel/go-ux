@@ -11,34 +11,106 @@ import (
 	fynetest "fyne.io/fyne/v2/test"
 )
 
-func TestNewPlaceholderContentShowsTabText(t *testing.T) {
-	fynetest.NewApp()
-
-	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "It was a dark and stormy night.")
-	obj := NewPlaceholderContent(tab)
-
+func newDocumentContentEntry(t *testing.T, tab *Tab, key any) (*widget.Entry, func()) {
+	t.Helper()
+	obj, cleanup := newDocumentContent(tab, key)
 	stack, ok := obj.(*fyne.Container)
 	if !ok {
-		t.Fatalf("NewPlaceholderContent returned %T, want *fyne.Container", obj)
+		t.Fatalf("newDocumentContent returned %T, want *fyne.Container", obj)
 	}
 	scroll, ok := stack.Objects[1].(*container.Scroll)
 	if !ok {
 		t.Fatalf("stack.Objects[1] is %T, want *container.Scroll", stack.Objects[1])
 	}
-	label, ok := scroll.Content.(*widget.Label)
+	entry, ok := scroll.Content.(*widget.Entry)
 	if !ok {
-		t.Fatalf("scroll content is %T, want *widget.Label", scroll.Content)
+		t.Fatalf("scroll content is %T, want *widget.Entry", scroll.Content)
 	}
-	if label.Text != tab.Text {
-		t.Errorf("label.Text = %q, want %q", label.Text, tab.Text)
+	return entry, cleanup
+}
+
+func TestNewDocumentContentShowsTabText(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "It was a dark and stormy night.")
+	entry, cleanup := newDocumentContentEntry(t, tab, "key1")
+	defer cleanup()
+
+	if entry.Text != tab.Text() {
+		t.Errorf("entry.Text = %q, want %q", entry.Text, tab.Text())
 	}
 }
 
-func TestNewPlaceholderContentBackgroundIsDarkenedNotBlack(t *testing.T) {
+func TestNewDocumentContentEditingUpdatesDocument(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "hello")
+	entry, cleanup := newDocumentContentEntry(t, tab, "key1")
+	defer cleanup()
+
+	entry.SetText("hello world")
+
+	if tab.Doc.Text() != "hello world" {
+		t.Errorf("Doc.Text() = %q, want %q", tab.Doc.Text(), "hello world")
+	}
+	if !tab.Dirty() {
+		t.Errorf("Dirty() = false, want true after an edit")
+	}
+}
+
+func TestNewDocumentContentReflectsExternalDocumentChanges(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "hello")
+	entry, cleanup := newDocumentContentEntry(t, tab, "key1")
+	defer cleanup()
+
+	// Simulate a second Pane showing the same Document editing it.
+	tab.Doc.SetText("hello from elsewhere")
+
+	if entry.Text != "hello from elsewhere" {
+		t.Errorf("entry.Text = %q, want %q", entry.Text, "hello from elsewhere")
+	}
+}
+
+func TestNewDocumentContentTwoListenersStaySynced(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "hello")
+	entryA, cleanupA := newDocumentContentEntry(t, tab, "keyA")
+	defer cleanupA()
+	entryB, cleanupB := newDocumentContentEntry(t, tab, "keyB")
+	defer cleanupB()
+
+	entryA.SetText("typed in A")
+
+	if entryB.Text != "typed in A" {
+		t.Errorf("entryB.Text = %q, want %q (should sync from entryA's edit)", entryB.Text, "typed in A")
+	}
+}
+
+func TestNewDocumentContentCleanupStopsFurtherUpdates(t *testing.T) {
+	fynetest.NewApp()
+
+	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "hello")
+	entry, cleanup := newDocumentContentEntry(t, tab, "key1")
+	cleanup()
+
+	tab.Doc.SetText("changed after cleanup")
+
+	if entry.Text == "changed after cleanup" {
+		t.Errorf("entry still received an update after cleanup was called")
+	}
+}
+
+func TestNewDocumentContentBackgroundIsDarkenedNotBlack(t *testing.T) {
 	fynetest.NewApp()
 
 	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "text")
-	stack := NewPlaceholderContent(tab).(*fyne.Container)
+	obj, cleanup := newDocumentContent(tab, "key1")
+	defer cleanup()
+
+	stack := obj.(*fyne.Container)
 	rect, ok := stack.Objects[0].(*canvas.Rectangle)
 	if !ok {
 		t.Fatalf("stack.Objects[0] is %T, want *canvas.Rectangle", stack.Objects[0])

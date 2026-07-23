@@ -26,7 +26,8 @@ type Pane struct {
 	tabs   []*Tab
 	active *Tab
 
-	center *fyne.Container // holds the current active Tab's content; swapped in place on tab switch
+	center         *fyne.Container // holds the current active Tab's content; swapped in place on tab switch
+	contentCleanup func()          // unregisters center's current content from its Document's listeners; nil when center is empty
 }
 
 // newPane builds a Pane wired into group (which may be nil in pure
@@ -84,9 +85,16 @@ func (p *Pane) selectTab(tab *Tab) {
 // visible height), leaving only the center content visible — exactly the
 // "just a window with a label, no tab bar" symptom this fixes.
 func (p *Pane) setActive(tab *Tab) {
+	if p.contentCleanup != nil {
+		p.contentCleanup()
+		p.contentCleanup = nil
+	}
+
 	p.active = tab
 	if tab != nil {
-		p.center.Objects = []fyne.CanvasObject{NewPlaceholderContent(tab)}
+		content, cleanup := newDocumentContent(tab, p)
+		p.center.Objects = []fyne.CanvasObject{content}
+		p.contentCleanup = cleanup
 	} else {
 		p.center.Objects = nil
 	}
