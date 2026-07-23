@@ -30,6 +30,25 @@ type node struct {
 	axis   splitAxis
 	a, b   *node
 	offset float64 // meaningful iff axis != axisNone; 0.5 is the sane default
+
+	// live is the *container.Split rebuild most recently created for this
+	// node, if it's a split node — a cache of the on-screen widget the user
+	// actually drags, kept so syncOffsets can read back its current
+	// Offset. This is a deliberate, narrow exception to "nodes are
+	// immutable values" (see the type doc comment): Fyne's container.Split
+	// has no drag/change callback in v2.8.0 (confirmed against the
+	// vendored source — only an unexported divider.DragEnd exists,
+	// inaccessible from this package), so there is no push notification
+	// when the user finishes dragging a divider. Reading .Offset back out
+	// of the live widget on demand (syncOffsets, called before every
+	// persisted-layout save) is the only way to capture a resize without
+	// either polling on a timer (a background goroutine Phase 1
+	// deliberately has none of) or forking container.Split. The practical
+	// consequence: a resize is captured the next time anything else
+	// changes (a tab open/close/split/move), not the instant the drag
+	// ends — see editors.md's persistence section for the same caveat
+	// spelled out for API consumers.
+	live *container.Split
 }
 
 func leaf(p *Pane) *node { return &node{pane: p} }
@@ -205,5 +224,24 @@ func rebuild(root *node) fyne.CanvasObject {
 		s = container.NewVSplit(a, b)
 	}
 	s.Offset = root.offset
+	root.live = s
 	return s
+}
+
+// syncOffsets recursively copies every split node's live *container.Split
+// widget's current Offset back into node.offset, so a save triggered by
+// some other change (see node.live's doc comment) persists the user's
+// most recent drag position rather than whatever offset was last baked
+// into the tree at the previous rebuild. A no-op for a node whose live
+// widget hasn't been built yet (e.g. immediately after loading persisted
+// state, before the first rebuildContent call).
+func syncOffsets(root *node) {
+	if root == nil || root.isLeaf() {
+		return
+	}
+	if root.live != nil {
+		root.offset = root.live.Offset
+	}
+	syncOffsets(root.a)
+	syncOffsets(root.b)
 }

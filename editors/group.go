@@ -3,7 +3,6 @@ package editors
 import (
 	"fmt"
 	"log"
-	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,6 +18,20 @@ import (
 // fyne.CanvasObject, so a host app can drop it straight into any Fyne
 // container — same embedding pattern as terminal.Session.
 //
+// Every exported method on Group (AddTab, SplitRight/SplitDown,
+// MoveRight/MoveDown) is expected to be called on the Fyne UI goroutine —
+// same documented contract as terminal.TabView's AddTab/CloseTab. Phase 1
+// has no background goroutines anywhere in this package (confirmed: no
+// `go` statements), so unlike terminal's uiMu (which coordinates real
+// background PTY-reader/refresh loops against the UI goroutine), Group
+// has no cross-goroutine state to guard and deliberately carries no
+// internal lock — a mutex here with nothing on the other end of it would
+// just be a false signal of thread-safety. If a later phase (e.g. file
+// watching) introduces a background goroutine that touches Group's
+// state, it must cross onto the UI goroutine via fyne.Do before calling
+// any Group method, the same way terminal's background loops do — it
+// should NOT reach for a mutex on Group instead.
+//
 // NewGroup's signature is deliberately minimal in this Phase 1 task — no
 // *db.DB parameter yet. A later task (layoutstate.go) adds live
 // persistence and will extend this constructor (or add a second one,
@@ -30,7 +43,6 @@ type Group struct {
 
 	app fyne.App
 
-	mu      sync.Mutex // guards root/nextID; Fyne callbacks (menu actions, tab bar events) all run on the UI goroutine already, so this is defense-in-depth rather than a proven necessity — cheap enough to include, matches this repo's general carefulness around shared mutable widget state (see terminal's uiMu precedent, though Group's own mutex is package-local to Group, not shared)
 	root    *node
 	primary *Pane
 	nextID  int
@@ -65,10 +77,18 @@ func (g *Group) CreateRenderer() fyne.WidgetRenderer {
 // persistence decision. A no-op if database is nil (NewGroup-only
 // callers) or while a persisted layout is being replayed (see
 // g.restoring's doc comment).
+//
+// Also syncs every split's live drag offset back into the node tree first
+// (see node.live's doc comment in split.go) — Fyne's container.Split has
+// no drag-end callback, so a pure resize with no other change in between
+// isn't captured the instant the drag ends; this is what makes the most
+// recent resize get captured the next time anything else triggers a
+// save, rather than never at all.
 func (g *Group) notifyChanged() {
 	if g.database == nil || g.restoring {
 		return
 	}
+	syncOffsets(g.root)
 	panes, tabs := g.buildPersistedLayout()
 	if err := g.database.SaveEditorLayout(g.groupID, panes, tabs); err != nil {
 		log.Printf("editors: save layout: %v", err)
@@ -85,8 +105,6 @@ func (g *Group) AddTab(tab *Tab) {
 // nextPaneID returns a fresh, unique pane identifier for use by
 // SplitRight/SplitDown.
 func (g *Group) nextPaneID() string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
 	g.nextID++
 	return fmt.Sprintf("pane-%d", g.nextID)
 }

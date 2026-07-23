@@ -81,8 +81,8 @@ text backend.
 
 ## Persistence
 
-Live — every structural or tab change writes the whole current layout
-immediately via new `go-ux/db.DB` methods (`SaveEditorLayout`/
+Live — every tab open/close and every split/move writes the whole current
+layout immediately via new `go-ux/db.DB` methods (`SaveEditorLayout`/
 `LoadEditorLayout`, a third persistence domain alongside `db`'s existing
 settings registry and opaque UI-state blobs — see `db.md`). This is NOT an
 opaque blob like `go-ux/treestate` uses for tree state; it's a real
@@ -90,6 +90,16 @@ relational shape (`db.EditorPane`/`db.EditorTab`), matching the settings
 registry's `Node`/`Property` precedent, because a caller-visible "what
 tabs are open" structure was a deliberate design goal here (unlike
 `treestate`'s state, which stays entirely internal).
+
+**Resize-bar (split offset) persistence is opportunistic, not instant.**
+Fyne's `container.Split` has no drag-end callback in this Fyne version, so
+there's no signal the moment the user finishes dragging a divider. A
+resize is captured and persisted the *next* time anything else changes
+(open/close/split/move a tab) — not the instant the drag ends. Dragging a
+divider and then immediately closing the app with no other action loses
+that particular resize. A future phase may add proper drag-end capture
+(likely via a small custom split wrapper); tracked as a known Phase 1 gap,
+not a design decision.
 
 ## Minimal usage
 
