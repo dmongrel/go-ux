@@ -10,11 +10,10 @@ a diff for human review.
 **Current state (this document):** the layout/interaction shell — tab bar,
 split/move-pane menus, resize bars, persisted layout — plus a real,
 editable, Document-backed content area with line numbers, a soft-wrap
-toggle, Ctrl+scroll font sizing, and Markdown preview (see "Documents and
-editing", "Font settings", and "Markdown preview" below). No file I/O
-(content is seeded in memory by the caller, not loaded from disk), no diff
-review, and no file watching yet — those are deferred to later phases so
-the interaction surface could be verified independently first.
+toggle, Ctrl+scroll font sizing, Markdown preview, diff review, and file
+watching (see the sections below). Every item from the original design
+plan's Phase 2 list is now implemented; what's left is smaller follow-up
+work (see "Deferred" at the bottom).
 
 ## Public API
 
@@ -29,6 +28,7 @@ func (g *Group) MoveRight(source *Pane, tab *Tab)
 func (g *Group) MoveDown(source *Pane, tab *Tab)
 func (g *Group) OpenFile(path string) (*Tab, error)
 func (g *Group) ProposeDiff(path string, newText string) error
+func (g *Group) Close()
 // Group also implements fyne.CanvasObject (embeds widget.BaseWidget), so
 // it can be dropped straight into any Fyne container/window.
 
@@ -36,6 +36,9 @@ func NewTab(id, title, filePath, text string) *Tab
 
 func (t *Tab) Text() string
 func (t *Tab) Dirty() bool
+
+func RegisterSettings(database *db.DB, groupID string) error
+func ApplyEditorSettings(database *db.DB, groupID string, group *Group) error
 ```
 
 `NewGroup` builds a `Group` — the embeddable parent layout component —
@@ -230,10 +233,44 @@ Code `/ide`-style integration) to drive:
 Both are plain synchronous methods (no goroutine/channel API) — same
 UI-goroutine-only contract as `AddTab`/`SplitRight`/etc.
 
+## File watching
+
+Every tab opened with a real on-disk `FilePath` (via `OpenFile`/
+`ProposeDiff`) is watched for external changes, using one shared
+`*fsnotify.Watcher` per `Group`. The `file_watch_mode` setting (seeded by
+`RegisterSettings`, see "Settings persistence" below) controls the
+reaction:
+
+- **`"auto"`** — silently reloads the `Document` from disk, *unless* it
+  has unsaved edits (`Tab.Dirty()`), in which case it falls back to the
+  `"notify"` behavior rather than clobbering them.
+- **`"notify"`** (the default) — shows the south bar's **Load from
+  Disk**/**Keep from Memory** choice instead of changing anything
+  automatically.
+
+A watch is added when a tab opens and is **not** explicitly removed when
+that tab later closes — it lives for the `Group`'s lifetime once started
+(a documented simplification, not the original design's exact "start on
+open, stop when the last reference closes"). Call `Group.Close()` when a
+host app is done with a `Group` (e.g. its window closing) to stop the
+watcher.
+
+## Settings persistence
+
+`RegisterSettings(database *db.DB, groupID string) error` seeds a
+per-`groupID` settings-tree node ("Editors: `<groupID>`") with font
+settings and `file_watch_mode` — call it once (e.g. at app startup,
+idempotent) before relying on either being persisted.
+`ApplyEditorSettings(database, groupID, group)` re-reads and pushes the
+font value into a live `*Group` — call it after a settings-window
+OK/Apply, the same way `terminal.ApplyFontSettings` does for `terminal`.
+`NewGroupFromSettings` already reads both automatically at construction
+time if a node exists.
+
 ## Deferred (not yet built)
 
 File I/O beyond `OpenFile`/`ProposeDiff` (there's still no "save this tab
-to disk" for a normal, non-diff-review edit) and file watching (via
-`fsnotify`, auto-load or notify on external changes); and persisting the
-font size setting (see "Font settings" above). All designed but not yet
-implemented.
+to disk" for a normal, non-diff-review edit). `file_watch_mode` is read
+once at construction, not re-applied live by `ApplyEditorSettings` (see
+that function's own doc comment for why). All designed but not yet
+implemented/decided.
