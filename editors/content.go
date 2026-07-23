@@ -1,8 +1,12 @@
 package editors
 
 import (
+	"image/color"
+
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -26,5 +30,23 @@ import (
 func NewPlaceholderContent(tab *Tab) fyne.CanvasObject {
 	label := widget.NewLabel(tab.Text)
 	label.Wrapping = fyne.TextWrapWord
-	return container.NewScroll(label)
+
+	bg := canvas.NewRectangle(darkenedContentBackground())
+	return container.NewStack(bg, container.NewScroll(label))
+}
+
+// darkenedContentBackground returns the current theme's background color,
+// darkened by 20%, so the content area reads as visually distinct from the
+// rest of the Pane chrome (tab bar, south bar) without going fully black —
+// stays theme-aware (light vs. dark) rather than a fixed color, unlike
+// tabbar.go's chipActiveColor, since a flat dark color here would look
+// wrong against a light theme's background.
+func darkenedContentBackground() color.Color {
+	th := fyne.CurrentApp().Settings().Theme()
+	variant := fyne.CurrentApp().Settings().ThemeVariant()
+	bg := th.Color(theme.ColorNameBackground, variant)
+
+	r, g, b, a := bg.RGBA()
+	darken := func(v uint32) uint8 { return uint8(v * 8 / 10 >> 8) }
+	return color.NRGBA{R: darken(r), G: darken(g), B: darken(b), A: uint8(a >> 8)}
 }
