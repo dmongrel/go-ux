@@ -27,6 +27,8 @@ func (g *Group) SplitRight(source *Pane)
 func (g *Group) SplitDown(source *Pane)
 func (g *Group) MoveRight(source *Pane, tab *Tab)
 func (g *Group) MoveDown(source *Pane, tab *Tab)
+func (g *Group) OpenFile(path string) (*Tab, error)
+func (g *Group) ProposeDiff(path string, newText string) error
 // Group also implements fyne.CanvasObject (embeds widget.BaseWidget), so
 // it can be dropped straight into any Fyne container/window.
 
@@ -202,10 +204,36 @@ live view: if the same `Document` is being edited in another split pane
 while this one shows a preview, the preview won't update until toggled off
 and back on.
 
+## Diff review (mcp_tooling)
+
+`editors` implements no MCP protocol/server itself — it exposes a plain Go
+API for a host app's own separately-implemented tooling (e.g. a Claude
+Code `/ide`-style integration) to drive:
+
+- `OpenFile(path string) (*Tab, error)` — the "click a file in a host
+  app's sidebar" entry point. Reads `path` from disk (the package's first
+  real file I/O — every other tab-opening path so far seeds text purely
+  in memory) if it isn't already open in this `Group`; returns the
+  existing `Tab` instead of a duplicate if it is.
+- `ProposeDiff(path string, newText string) error` — opens `path` (via
+  `OpenFile`) if needed, then switches every `Pane` currently showing that
+  tab into a **diff-review** mode: the content area shows a read-only,
+  line-by-line red/green diff between the current text and `newText`
+  (unchanged lines included, for full context — this favors reviewing
+  prose edits over terse source-code hunks), and the south bar shows
+  **Accept**/**Cancel**. Accept applies `newText` to the `Document` (which
+  live-syncs to any other pane already showing it, same as a normal edit)
+  and writes it to disk; Cancel discards the proposal, `Document`
+  untouched. A disk-write failure on Accept is logged, not surfaced as an
+  error — the in-memory edit still applies either way.
+
+Both are plain synchronous methods (no goroutine/channel API) — same
+UI-goroutine-only contract as `AddTab`/`SplitRight`/etc.
+
 ## Deferred (not yet built)
 
-File I/O (loading from / saving to disk) and file watching (via
-`fsnotify`, auto-load or notify on external changes); diff review (via
-`go-difflib`) plus an external API for a host app's own AI-assistant
-tooling to propose edits; and persisting the font size setting (see "Font
-settings" above). All designed but not yet implemented.
+File I/O beyond `OpenFile`/`ProposeDiff` (there's still no "save this tab
+to disk" for a normal, non-diff-review edit) and file watching (via
+`fsnotify`, auto-load or notify on external changes); and persisting the
+font size setting (see "Font settings" above). All designed but not yet
+implemented.
