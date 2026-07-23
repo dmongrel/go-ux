@@ -10,11 +10,11 @@ a diff for human review.
 **Current state (this document):** the layout/interaction shell — tab bar,
 split/move-pane menus, resize bars, persisted layout — plus a real,
 editable, Document-backed content area with line numbers, a soft-wrap
-toggle, and Ctrl+scroll font sizing (see "Documents and editing" and "Font
-settings" below). No file I/O (content is seeded in memory by the caller,
-not loaded from disk), no diff review, no markdown preview, and no file
-watching yet — those are deferred to later phases so the interaction
-surface could be verified independently first.
+toggle, Ctrl+scroll font sizing, and Markdown preview (see "Documents and
+editing", "Font settings", and "Markdown preview" below). No file I/O
+(content is seeded in memory by the caller, not loaded from disk), no diff
+review, and no file watching yet — those are deferred to later phases so
+the interaction surface could be verified independently first.
 
 ## Public API
 
@@ -190,11 +190,22 @@ node yet (the way `terminal/settings_schema.go` registers one for
 that, mirroring `terminal`'s `RegisterSettings`/`ApplyFontSettings` pattern
 using `fontsettings.SeedFontProperties`/`ReadFontProperties`.
 
+## Markdown preview
+
+Tabs whose `FilePath` ends in `.md`/`.markdown` get a **Preview**/**Edit**
+toggle button, right-aligned in that pane's tab bar. Preview mode renders
+the current text via goldmark (`markdown.go`'s `renderMarkdown`) —
+headings, paragraphs, bold/italic/inline code, links, blockquotes,
+ordered/unordered lists, fenced/indented code blocks, and thematic breaks
+— in place of the editable content area. This is a **snapshot**, not a
+live view: if the same `Document` is being edited in another split pane
+while this one shows a preview, the preview won't update until toggled off
+and back on.
+
 ## Deferred (not yet built)
 
-Markdown preview (via goldmark); file I/O (loading from / saving to disk)
-and file watching (via `fsnotify`, auto-load or notify on external
-changes); diff review (via `go-difflib`) plus an external API for a host
-app's own AI-assistant tooling to propose edits; and persisting the font
-size setting (see "Font settings" above). All designed but not yet
-implemented.
+File I/O (loading from / saving to disk) and file watching (via
+`fsnotify`, auto-load or notify on external changes); diff review (via
+`go-difflib`) plus an external API for a host app's own AI-assistant
+tooling to propose edits; and persisting the font size setting (see "Font
+settings" above). All designed but not yet implemented.
