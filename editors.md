@@ -87,12 +87,13 @@ along with `Document.Dirty()`-aware save/reload and file watching, is a
 later phase).
 
 A right-aligned line-number gutter runs down the left side of the content
-area. Right-click it for **Toggle Soft Wrap** — off, long lines overflow
-horizontally (scrollbar); on (the default), they wrap within the visible
-width. Line numbers track logical lines exactly when wrap is off; with
-wrap on, a long logical line still gets a single gutter number even though
-it spans multiple visual lines (an accepted approximation, not yet true
-visual-line numbering).
+area, with the cursor's current line kept at full brightness and every
+other line dimmed (IntelliJ-style). Right-click the gutter for **Toggle
+Soft Wrap** — off, long lines overflow horizontally (scrollbar); on (the
+default), they wrap within the visible width. Line numbers track logical
+lines exactly when wrap is off; with wrap on, a long logical line still
+gets a single gutter number even though it spans multiple visual lines (an
+accepted approximation, not yet true visual-line numbering).
 
 ## Splitting and moving
 
