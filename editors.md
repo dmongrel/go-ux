@@ -87,7 +87,18 @@ content widget registers/unregisters itself as its active tab changes.
 seeded directly via `NewTab`/`AddTab` rather than `OpenFile`) can't be
 saved this way; there's no "Save As" yet, and no in-app indication of a
 save failure beyond a logged error (`Group.SaveTab`'s returned `error` is
-available to a caller driving it programmatically).
+available to a caller driving it programmatically). A tab with unsaved
+changes shows a `*` prefix on its title in the tab bar, live-updated as
+`Dirty()` changes.
+
+**Ctrl+PageDown/Ctrl+PageUp cycle through a Pane's open tabs** (wrapping
+around) without needing to click a tab chip — the same shortcut browsers
+and editors like VS Code use.
+
+A Pane with no open tabs (a fresh primary Pane, or one whose last tab was
+just closed) shows a plain "No file open" placeholder rather than blank
+space — `editors` has no file picker of its own, so this is deliberately
+just a message, not an actionable button.
 
 A right-aligned line-number gutter runs down the left side of the content
 area, with the cursor's current line kept at full brightness and every
