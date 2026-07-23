@@ -11,6 +11,40 @@ import (
 	"go-ux/fontsettings"
 )
 
+// TestEditorEntryMouseDownAcquiresRealFocus is a regression test for a
+// real user-reported bug: typing and pasting into the content area did
+// nothing at all. Root cause: newEditorEntry built its *widget.Entry via
+// widget.NewMultiLineEntry(), which itself calls
+// entry.ExtendBaseWidget(entry) — and BaseWidget.ExtendBaseWidget is a
+// one-shot that silently no-ops once already set, so the later
+// e.ExtendBaseWidget(e) call left the widget's internal "impl" pointed at
+// the bare inner *widget.Entry (never actually placed in any canvas)
+// instead of e (the *editorEntry actually placed in the canvas tree).
+// widget.Entry.requestFocus() — called from MouseDown, the real desktop
+// left-click focus trigger (Entry.Tapped itself does nothing; fynetest.Tap
+// only simulates Tapped, not MouseDown, which is why this test calls
+// MouseDown directly rather than using fynetest.Tap) — looks up the
+// canvas FOR THAT IMPL value; since the impl was never in the tree, the
+// lookup returned nil and focus was silently never acquired. Every other
+// test in this file drives editorEntry via SetText/OnChanged directly,
+// never through this real click-to-focus path, so none of them caught
+// this.
+func TestEditorEntryMouseDownAcquiresRealFocus(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	win := fynetest.NewWindow(entry)
+	defer win.Close()
+	win.Resize(fyne.NewSize(200, 200))
+
+	entry.MouseDown(&desktop.MouseEvent{PointEvent: fyne.PointEvent{Position: fyne.NewPos(5, 5)}, Button: desktop.MouseButtonPrimary})
+
+	if win.Canvas().Focused() != fyne.Focusable(entry) {
+		t.Fatalf("Canvas().Focused() = %v, want the clicked entry itself — clicking the content area does not acquire keyboard focus, so typing/pasting silently does nothing", win.Canvas().Focused())
+	}
+}
+
 func TestEditorEntryPlainScrollForwardsToAncestor(t *testing.T) {
 	fynetest.NewApp()
 

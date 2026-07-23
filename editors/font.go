@@ -81,7 +81,27 @@ type editorEntry struct {
 }
 
 func newEditorEntry(fonts *fontsettings.State, forwardScroll func(*fyne.ScrollEvent)) *editorEntry {
-	e := &editorEntry{Entry: widget.NewMultiLineEntry(), fonts: fonts, forwardScroll: forwardScroll}
+	// Deliberately NOT widget.NewMultiLineEntry(): that constructor calls
+	// entry.ExtendBaseWidget(entry) itself, and BaseWidget.ExtendBaseWidget
+	// is a one-shot — it silently no-ops if the widget's "impl" is already
+	// set (see its own source). Calling e.ExtendBaseWidget(e) below would
+	// then do nothing, leaving impl pointed at the bare inner *widget.Entry
+	// instead of e — and *widget.Entry.requestFocus() (used by every tap,
+	// and thus by every keystroke) calls fyne.CurrentApp().Driver().
+	// CanvasForObject(impl): since only e (not the inner bare Entry) is
+	// ever actually placed in the canvas tree, that lookup returns nil and
+	// focus is never acquired, silently breaking all typing/paste — a real
+	// bug this exact construction produced, caught by manual testing
+	// (automated tests all drove Entry via SetText/OnChanged directly,
+	// never through a real tap-to-focus-then-type flow, so they never
+	// exercised requestFocus at all). Building the *widget.Entry value by
+	// hand and extending e first, before anything else has a chance to
+	// extend the inner Entry on its own, fixes it.
+	e := &editorEntry{
+		Entry:         &widget.Entry{MultiLine: true, Wrapping: fyne.TextWrap(fyne.TextTruncateClip)},
+		fonts:         fonts,
+		forwardScroll: forwardScroll,
+	}
 	e.ExtendBaseWidget(e)
 	return e
 }
