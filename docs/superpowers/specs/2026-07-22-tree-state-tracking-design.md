@@ -96,10 +96,18 @@ grows as the user actually opens branches.
   incremental delta — matches how the blob store works (one write replaces
   the whole blob) and matches `settings.saveUIState`'s existing all-at-once
   pattern.
-- **Search-driven expansion counts.** `settings.Window`'s search feature
-  already calls `tree.OpenAllBranches()` to reveal matches; since `Track`
-  owns `OnBranchOpened`, that also persists (per your "persist whatever's
-  expanded, regardless of cause" answer) — no special-casing needed.
+- **Search-driven expansion counts, but needs one call-site change.**
+  `settings.Window`'s search feature currently calls
+  `tree.OpenAllBranches()` to reveal matches — but Fyne's `OpenAllBranches`
+  mutates the tree's internal open-set directly and does **not** invoke
+  `OnBranchOpened` (confirmed by reading `widget/tree.go`), so as written
+  it would silently bypass `Track`'s persistence entirely, contradicting
+  your "persist whatever's expanded, regardless of cause" answer. Fixed by
+  changing `applySearch` to open each branch individually
+  (`tree.OpenBranch(uid)` per branch node, which *does* fire
+  `OnBranchOpened`) instead of calling `OpenAllBranches()` — same resulting
+  UI behavior (every branch ends up open), but each open now goes through
+  `Track`'s callback and gets persisted.
 - **Restore does not re-save.** `Restore` calls `tree.OpenBranch`/
   `tree.Select` internally, which would otherwise re-trigger `Track`'s own
   `OnBranchOpened`/`OnSelected` handlers and immediately write back the
