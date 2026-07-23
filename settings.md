@@ -120,6 +120,13 @@ staged/Apply-gated like property edits) and restored at the start of
 SidebarOffset}`) — an implementation detail, not something a consumer needs
 to construct or parse.
 
+The properties tree's own expand/collapse state and last-selected node are
+persisted separately, via `go-ux/treestate` (see `treestate.md`) — its own
+blob, keyed by `componentID + ".tree"`, written live on every branch
+toggle/selection rather than only on window close. This is what makes
+reopening Settings automatically show the same tree shape and the same
+selected node's properties page as when it was last closed.
+
 ## Search / filtering behavior
 
 Typing in the search box at the top of the sidebar filters the tree
