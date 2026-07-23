@@ -7,6 +7,15 @@ import (
 	fynetest "fyne.io/fyne/v2/test"
 )
 
+// newPlaceholderPane builds a bare, group-less Pane for split.go's
+// pure-tree-logic tests — these only need distinct, comparable
+// fyne.CanvasObjects (see split.go's node doc comment on pointer-identity
+// comparisons), not a fully wired-up Pane. A nil group is fine here: none
+// of these tests call methods that touch p.group.
+func newPlaceholderPane(name string) *Pane {
+	return newPane(nil, name, false)
+}
+
 func TestSplitCreatesTwoPaneTree(t *testing.T) {
 	paneA := newPlaceholderPane("a")
 	paneB := newPlaceholderPane("b")
