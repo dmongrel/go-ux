@@ -1,6 +1,7 @@
 package editors
 
 import (
+	"log"
 	"os"
 
 	"fyne.io/fyne/v2"
@@ -140,7 +141,15 @@ func (p *Pane) rebuildCenterContent() {
 		return
 	}
 
-	content, cleanup := newDocumentContent(p.active, p, p.fonts)
+	tab := p.active
+	content, cleanup := newDocumentContent(tab, p, p.fonts, func() {
+		if p.group == nil {
+			return
+		}
+		if err := p.group.SaveTab(tab); err != nil {
+			log.Printf("editors: save %s: %v", tab.FilePath, err)
+		}
+	})
 	p.center.Objects = []fyne.CanvasObject{content}
 	p.contentCleanup = cleanup
 	p.center.Refresh()

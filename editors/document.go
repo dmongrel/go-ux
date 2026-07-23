@@ -41,6 +41,11 @@ func (d *Document) SetText(text string) {
 // Dirty reports whether the Document has unsaved changes.
 func (d *Document) Dirty() bool { return d.dirty }
 
+// MarkClean clears the Dirty flag — called after a successful save
+// (Group.SaveTab) so the Document stops reporting unsaved changes for
+// text that's now actually on disk.
+func (d *Document) MarkClean() { d.dirty = false }
+
 // RegisterListener registers fn to be called with the new text every time
 // SetText changes it. key identifies the caller (typically the *Pane
 // displaying this Document) so a later UnregisterListener call can remove

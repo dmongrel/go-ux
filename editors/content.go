@@ -15,19 +15,21 @@ import (
 // editable, multi-line text widget bound to tab.Doc, kept in sync with any
 // other Pane showing the same Document (split.go's "same underlying
 // document, synced live" split semantics), Ctrl+scroll-adjustable in font
-// size via fonts (font.go). key identifies the caller (see
-// Document.RegisterListener/fontsettings.State.RegisterListener) — pane.go
-// passes its own *Pane, since only one content widget is live per Pane at
-// a time. Callers MUST call the returned cleanup func when this content is
-// no longer shown (e.g. the active tab changes), or the Document/font
-// state will keep pushing updates into an orphaned widget indefinitely.
-func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State) (content fyne.CanvasObject, cleanup func()) {
+// size via fonts (font.go), Ctrl+S wired to onSave. key identifies the
+// caller (see Document.RegisterListener/fontsettings.State.RegisterListener)
+// — pane.go passes its own *Pane, since only one content widget is live
+// per Pane at a time. Callers MUST call the returned cleanup func when
+// this content is no longer shown (e.g. the active tab changes), or the
+// Document/font state will keep pushing updates into an orphaned widget
+// indefinitely.
+func newDocumentContent(tab *Tab, key any, fonts *fontsettings.State, onSave func()) (content fyne.CanvasObject, cleanup func()) {
 	var scroll *container.Scroll
 	entry := newEditorEntry(fonts, func(ev *fyne.ScrollEvent) {
 		if scroll != nil {
 			scroll.Scrolled(ev)
 		}
 	})
+	entry.onSave = onSave
 	entry.Wrapping = fyne.TextWrapWord
 	entry.SetText(tab.Doc.Text())
 

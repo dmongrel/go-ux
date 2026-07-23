@@ -1,10 +1,12 @@
 package editors
 
 import (
+	"os"
 	"testing"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	fynetest "fyne.io/fyne/v2/test"
 )
 
@@ -159,6 +161,49 @@ func TestPaneSetActiveResetsPreviewMode(t *testing.T) {
 
 	if p.previewMode {
 		t.Errorf("previewMode = true after setActive, want false (switching tabs exits preview)")
+	}
+}
+
+func TestPaneContentOnSaveWritesTabToDisk(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	path := writeTempFile(t, "chapter1.txt", "original")
+	tab, err := g.OpenFile(path)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	g.Close() // stop the real watcher before the write below — see watch_test.go's package doc comment
+
+	tab.Doc.SetText("edited via the content area")
+
+	// g.primary's center content holds the editorEntry whose onSave was
+	// wired by rebuildCenterContent (pane.go) to call g.SaveTab — reach
+	// through the same Stack(rect, Scroll(Border(entry, sidebar))) shape
+	// content_test.go's unwrapDocumentContent documents, but starting
+	// from the already-built center content rather than calling
+	// newDocumentContent directly, so this exercises the real wiring.
+	override, ok := g.primary.center.Objects[0].(*container.ThemeOverride)
+	if !ok {
+		t.Fatalf("center.Objects[0] is %T, want *container.ThemeOverride", g.primary.center.Objects[0])
+	}
+	stack := override.Content.(*fyne.Container)
+	scroll := stack.Objects[1].(*container.Scroll)
+	row := scroll.Content.(*fyne.Container)
+	entry := row.Objects[0].(*editorEntry)
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl})
+
+	if tab.Dirty() {
+		t.Errorf("Dirty() = true after Ctrl+S, want false")
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back %s: %v", path, err)
+	}
+	if string(onDisk) != "edited via the content area" {
+		t.Errorf("file on disk = %q, want %q", string(onDisk), "edited via the content area")
 	}
 }
 

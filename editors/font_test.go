@@ -31,6 +31,74 @@ func TestEditorEntrySelectAllShortcutSelectsEverything(t *testing.T) {
 	}
 }
 
+func TestEditorEntryCtrlSTriggersOnSave(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	called := false
+	entry.onSave = func() { called = true }
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl})
+
+	if !called {
+		t.Errorf("onSave did not fire for Ctrl+S")
+	}
+}
+
+func TestEditorEntryOtherModifierSDoesNotTriggerOnSave(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	called := false
+	entry.onSave = func() { called = true }
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierAlt})
+
+	if called {
+		t.Errorf("onSave fired for Alt+S, want only Ctrl+S to trigger it")
+	}
+}
+
+func TestEditorEntryNilOnSaveDoesNotPanicOnCtrlS(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil) // onSave left nil
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl})
+}
+
+func TestEditorEntryCtrlSDoesNotFallThroughToEntrySelectAll(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	entry.SetText("hello world")
+	entry.onSave = func() {}
+
+	entry.TypedShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyS, Modifier: fyne.KeyModifierControl})
+
+	if entry.SelectedText() != "" {
+		t.Errorf("SelectedText() = %q after Ctrl+S, want empty — Ctrl+S must not fall through to Entry's own TypedShortcut", entry.SelectedText())
+	}
+}
+
+func TestEditorEntryOtherShortcutsStillDelegateToEntry(t *testing.T) {
+	fynetest.NewApp()
+
+	fonts := newTestFonts()
+	entry := newEditorEntry(fonts, nil)
+	entry.SetText("hello world")
+
+	entry.TypedShortcut(&fyne.ShortcutSelectAll{})
+
+	if entry.SelectedText() != "hello world" {
+		t.Errorf("SelectedText() = %q, want %q — non-Ctrl+S shortcuts must still delegate to Entry", entry.SelectedText(), "hello world")
+	}
+}
+
 // TestEditorEntryMouseDownAcquiresRealFocus is a regression test for a
 // real user-reported bug: typing and pasting into the content area did
 // nothing at all. Root cause: newEditorEntry built its *widget.Entry via

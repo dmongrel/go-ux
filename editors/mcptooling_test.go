@@ -72,6 +72,47 @@ func TestOpenFileMissingFileReturnsError(t *testing.T) {
 	}
 }
 
+func TestSaveTabWritesCurrentTextToDiskAndMarksClean(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	path := writeTempFile(t, "chapter1.txt", "original")
+	tab, err := g.OpenFile(path)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	g.Close() // stop the real watcher before the write below — see watch_test.go's package doc comment
+
+	tab.Doc.SetText("edited text")
+	if err := g.SaveTab(tab); err != nil {
+		t.Fatalf("SaveTab: %v", err)
+	}
+
+	if tab.Dirty() {
+		t.Errorf("Dirty() = true after SaveTab, want false")
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back %s: %v", path, err)
+	}
+	if string(onDisk) != "edited text" {
+		t.Errorf("file on disk = %q, want %q", string(onDisk), "edited text")
+	}
+}
+
+func TestSaveTabWithNoFilePathReturnsError(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	tab := NewTab("t1", "untitled", "", "some text")
+
+	if err := g.SaveTab(tab); err == nil {
+		t.Fatalf("SaveTab(tab with no FilePath) returned nil error")
+	}
+}
+
 func TestProposeDiffSwitchesActivePaneIntoDiffReview(t *testing.T) {
 	app := fynetest.NewApp()
 	g := NewGroup(app)
@@ -119,6 +160,9 @@ func TestAcceptDiffAppliesTextAndWritesToDisk(t *testing.T) {
 
 	if tab.Doc.Text() != "new text" {
 		t.Errorf("Doc.Text() = %q, want %q", tab.Doc.Text(), "new text")
+	}
+	if tab.Dirty() {
+		t.Errorf("Dirty() = true after a successful Accept, want false — the write to disk succeeded")
 	}
 	if tab.pendingDiff != nil {
 		t.Errorf("pendingDiff is non-nil after Accept, want nil")

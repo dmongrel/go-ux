@@ -1,6 +1,7 @@
 package editors
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -26,6 +27,25 @@ func (g *Group) OpenFile(path string) (*Tab, error) {
 	tab := NewTab(path, filepath.Base(path), path, string(data))
 	g.AddTab(tab)
 	return tab, nil
+}
+
+// SaveTab writes tab's current Document text to tab.FilePath, marking it
+// clean on success. This is the plain, non-diff-review "just save my
+// edit" path (Ctrl+S — see font.go's editorEntry.TypedShortcut) — until
+// now the only way to persist an edited Tab's content to disk at all was
+// via a host-tooling-proposed ProposeDiff/Accept, which is the wrong
+// entry point for a normal user edit. Returns an error if tab has no
+// FilePath (nothing to save to — e.g. a Tab that was never opened from,
+// or associated with, a real file).
+func (g *Group) SaveTab(tab *Tab) error {
+	if tab.FilePath == "" {
+		return errors.New("editors: tab has no FilePath to save to")
+	}
+	if err := os.WriteFile(tab.FilePath, []byte(tab.Doc.Text()), 0o644); err != nil {
+		return err
+	}
+	tab.Doc.MarkClean()
+	return nil
 }
 
 // findTabByPath searches every Pane's tabs for one whose FilePath matches
@@ -89,6 +109,8 @@ func (g *Group) acceptDiff(tab *Tab) {
 	tab.Doc.SetText(newText)
 	if err := os.WriteFile(tab.FilePath, []byte(newText), 0o644); err != nil {
 		log.Printf("editors: write %s: %v", tab.FilePath, err)
+	} else {
+		tab.Doc.MarkClean()
 	}
 	tab.pendingDiff = nil
 	g.exitDiffReview(tab)

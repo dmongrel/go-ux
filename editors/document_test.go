@@ -13,6 +13,20 @@ func TestNewDocumentStartsCleanWithGivenText(t *testing.T) {
 	}
 }
 
+func TestMarkCleanClearsDirty(t *testing.T) {
+	d := NewDocument("hello")
+	d.SetText("world")
+
+	d.MarkClean()
+
+	if d.Dirty() {
+		t.Errorf("Dirty() = true after MarkClean, want false")
+	}
+	if d.Text() != "world" {
+		t.Errorf("Text() = %q, want unchanged %q — MarkClean must not touch the text itself", d.Text(), "world")
+	}
+}
+
 func TestSetTextUpdatesTextAndMarksDirty(t *testing.T) {
 	d := NewDocument("hello")
 

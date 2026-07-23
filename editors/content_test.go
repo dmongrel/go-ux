@@ -35,7 +35,7 @@ func unwrapDocumentContent(t *testing.T, obj fyne.CanvasObject) *fyne.Container 
 
 func newDocumentContentParts(t *testing.T, tab *Tab, key any) (entry *editorEntry, sidebar *gutter, cleanup func()) {
 	t.Helper()
-	obj, cleanup := newDocumentContent(tab, key, newTestFonts())
+	obj, cleanup := newDocumentContent(tab, key, newTestFonts(), nil)
 	stack := unwrapDocumentContent(t, obj)
 	scroll, ok := stack.Objects[1].(*container.Scroll)
 	if !ok {
@@ -176,7 +176,7 @@ func TestNewDocumentContentBackgroundIsDarkenedNotBlack(t *testing.T) {
 	fynetest.NewApp()
 
 	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "text")
-	obj, cleanup := newDocumentContent(tab, "key1", newTestFonts())
+	obj, cleanup := newDocumentContent(tab, "key1", newTestFonts(), nil)
 	defer cleanup()
 
 	stack := unwrapDocumentContent(t, obj)
@@ -202,7 +202,7 @@ func TestNewDocumentContentFontSizeChangeResizesText(t *testing.T) {
 
 	tab := NewTab("id-1", "chapter1.md", "/path/chapter1.md", "text")
 	fonts := newTestFonts()
-	obj, cleanup := newDocumentContent(tab, "key1", fonts)
+	obj, cleanup := newDocumentContent(tab, "key1", fonts, nil)
 	defer cleanup()
 
 	override, ok := obj.(*container.ThemeOverride)

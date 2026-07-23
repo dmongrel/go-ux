@@ -78,6 +78,7 @@ type editorEntry struct {
 	ctrlHeld      bool
 	fonts         *fontsettings.State
 	forwardScroll func(*fyne.ScrollEvent)
+	onSave        func()
 }
 
 func newEditorEntry(fonts *fontsettings.State, forwardScroll func(*fyne.ScrollEvent)) *editorEntry {
@@ -142,6 +143,22 @@ func (e *editorEntry) Scrolled(ev *fyne.ScrollEvent) {
 		current.Size += fontSizeScrollStep
 	}
 	e.fonts.Set(current)
+}
+
+// TypedShortcut intercepts Ctrl+S (Fyne has no built-in "Save" shortcut
+// constant — the driver reports any unrecognized modifier+key combo, this
+// one included, as a *desktop.CustomShortcut, which widget.Entry's own
+// TypedShortcut just ignores since nothing is registered for it) to call
+// onSave, otherwise delegates to Entry's own TypedShortcut so
+// Undo/Redo/Cut/Copy/Paste/Select-all keep working unchanged.
+func (e *editorEntry) TypedShortcut(shortcut fyne.Shortcut) {
+	if cs, ok := shortcut.(*desktop.CustomShortcut); ok && cs.KeyName == fyne.KeyS && cs.Modifier == fyne.KeyModifierControl {
+		if e.onSave != nil {
+			e.onSave()
+		}
+		return
+	}
+	e.Entry.TypedShortcut(shortcut)
 }
 
 // FocusLost clears ctrlHeld — mirrors terminal/widget.go's Session.FocusLost:
