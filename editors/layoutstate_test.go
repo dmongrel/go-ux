@@ -33,6 +33,64 @@ func TestNewGroupFromSettingsWithNoPriorStateFallsBackToDefault(t *testing.T) {
 	}
 }
 
+// TestLoadPrunesEmptyNonPrimaryPaneAndRePersists is a regression test for
+// a real report: a pre-bugfix build of splitPane could leave a non-primary
+// pane with zero tabs persisted to disk; simply fixing splitPane doesn't
+// retroactively clean up state a user already saved with the old, buggy
+// code. NewGroupFromSettings must self-heal: prune the empty pane on
+// load AND write the healed shape back, so the same stale layout doesn't
+// keep reappearing on every subsequent restart.
+func TestLoadPrunesEmptyNonPrimaryPaneAndRePersists(t *testing.T) {
+	app := fynetest.NewApp()
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("test.NewDB: %v", err)
+	}
+	defer d.Close()
+
+	// Hand-construct exactly the shape a pre-bugfix splitPane would have
+	// produced and persisted: a 2-pane horizontal split where the primary
+	// (id 2) has one tab and the non-primary pane (id 3) has none.
+	panes := []db.EditorPane{
+		{ID: 1, IsPane: false, Axis: "h", SplitOffset: 0.5},
+		{ID: 2, ParentPane: int64Ptr(1), IsPane: true, SortOrder: 0, IsPrimary: true},
+		{ID: 3, ParentPane: int64Ptr(1), IsPane: true, SortOrder: 1, IsPrimary: false},
+	}
+	tabs := []db.EditorTab{
+		{PaneID: 2, FilePath: "chapter1.txt", TabOrder: 0, IsActive: true},
+	}
+	if err := d.SaveEditorLayout("stale-group", panes, tabs); err != nil {
+		t.Fatalf("SaveEditorLayout: %v", err)
+	}
+
+	g := NewGroupFromSettings(app, d, "stale-group")
+
+	var count int
+	var only *Pane
+	walkPanes(g.root, func(p *Pane) {
+		count++
+		only = p
+	})
+	if count != 1 {
+		t.Fatalf("expected the empty non-primary pane to be pruned, leaving 1 pane, got %d", count)
+	}
+	if only != g.primary {
+		t.Fatal("expected the surviving pane to be the primary pane")
+	}
+
+	// Confirm the healed shape was actually written back, not just fixed
+	// in memory — a second, independent load against the same groupID
+	// must NOT see the stale empty pane reappear.
+	g2 := NewGroupFromSettings(app, d, "stale-group")
+	var count2 int
+	walkPanes(g2.root, func(*Pane) { count2++ })
+	if count2 != 1 {
+		t.Fatalf("stale empty pane reappeared on a second load — healed layout was not re-persisted; got %d panes", count2)
+	}
+}
+
+func int64Ptr(v int64) *int64 { return &v }
+
 func TestLiveChangesPersistAndReloadRoundTrips(t *testing.T) {
 	app := fynetest.NewApp()
 	d, err := test.NewDB()

@@ -158,6 +158,52 @@ func removePane(root *node, target *Pane, primary *Pane) (newRoot *node, ok bool
 	return root, false
 }
 
+// pruneEmpty removes every non-primary leaf pane with zero tabs from
+// root, promoting siblings exactly as removePane does — repeatedly,
+// since promoting a sibling up can itself expose another empty leaf that
+// also needs pruning (e.g. a 3-pane layout where both non-primary panes
+// happen to be empty). The primary pane is never pruned even if empty
+// (see removePane's doc comment — "always need one even if empty").
+//
+// Under normal live operation an empty non-primary pane can't actually
+// arise: split.go's split() always copies a tab into the pane it creates
+// (see group.go's splitPane), and Group's closePane already removes a
+// non-primary pane the moment its last tab closes. This exists as a
+// self-healing pass for persisted state saved by an earlier, buggier
+// build (see rebuildTreeFromPersisted) — not a substitute for those two
+// call sites keeping the invariant live.
+func pruneEmpty(root *node, primary *Pane) *node {
+	for {
+		empty, found := findEmptyNonPrimaryLeaf(root, primary)
+		if !found {
+			return root
+		}
+		newRoot, ok := removePane(root, empty, primary)
+		if !ok {
+			return root // shouldn't happen — avoid looping forever if it somehow does
+		}
+		root = newRoot
+	}
+}
+
+// findEmptyNonPrimaryLeaf returns the first non-primary leaf pane in root
+// (if any) with zero tabs.
+func findEmptyNonPrimaryLeaf(root *node, primary *Pane) (*Pane, bool) {
+	if root == nil {
+		return nil, false
+	}
+	if root.isLeaf() {
+		if root.pane != primary && len(root.pane.tabs) == 0 {
+			return root.pane, true
+		}
+		return nil, false
+	}
+	if p, ok := findEmptyNonPrimaryLeaf(root.a, primary); ok {
+		return p, true
+	}
+	return findEmptyNonPrimaryLeaf(root.b, primary)
+}
+
 // walkPanes calls fn for every leaf Pane in root, in "a before b" order.
 func walkPanes(root *node, fn func(*Pane)) {
 	if root == nil {

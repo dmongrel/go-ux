@@ -55,6 +55,15 @@ func NewGroupFromSettings(app fyne.App, database *db.DB, groupID string) *Group 
 	g.primary = primary
 	g.rebuildContent()
 
+	// Re-persist unconditionally (not just when pruneEmpty actually
+	// changed something) — idempotent given SaveEditorLayout's
+	// full-replace design, and it's what makes a self-heal from stale
+	// (e.g. pre-bugfix) persisted state stick: without this, the exact
+	// same bad layout would just get loaded, pruned in memory, shown
+	// correctly once, and then reappear on the next restart, since
+	// nothing ever wrote the healed shape back to database.
+	g.notifyChanged()
+
 	return g
 }
 
@@ -187,6 +196,10 @@ func rebuildTreeFromPersisted(g *Group, panes []db.EditorPane, tabs []db.EditorT
 	if root == nil || primary == nil {
 		return nil, nil, false
 	}
+	// Self-heal any empty non-primary pane a previous, buggier build might
+	// have persisted (see pruneEmpty's doc comment) — a live Group never
+	// produces one itself, but old saved state might still have one.
+	root = pruneEmpty(root, primary)
 	return root, primary, true
 }
 
