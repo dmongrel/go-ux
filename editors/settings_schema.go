@@ -92,26 +92,26 @@ func readEditorSettings(database *db.DB, groupID string) (font fontsettings.Font
 
 // ApplyEditorSettings re-reads groupID's Editors node from database and
 // pushes its font value into group.fonts live — group re-renders against
-// the new size immediately (font.go's newContentThemeOverride listener). A
-// host app calls this after a Settings-window OK/Apply commits new values,
-// the same way terminal.ApplyFontSettings does for terminal Sessions. A
-// database with no Editors node for groupID yet is not an error —
-// ApplyEditorSettings simply leaves group.fonts untouched, same
-// graceful-fallback contract readEditorSettings itself already has.
+// the new size immediately (font.go's newContentThemeOverride listener) —
+// and updates group.fileWatchMode. A host app calls this after a
+// Settings-window OK/Apply commits new values, the same way
+// terminal.ApplyFontSettings does for terminal Sessions. A database with
+// no Editors node for groupID yet is not an error — ApplyEditorSettings
+// simply leaves group untouched, same graceful-fallback contract
+// readEditorSettings itself already has.
 //
-// file_watch_mode is deliberately NOT re-applied live here — group.fonts
-// changes affect only rendering, but changing fileWatchMode retroactively
-// while a diff/notification might already be in flight is a sharper edge
-// case; group.fileWatchMode is read once, at NewGroupFromSettings time
-// (see layoutstate.go), not re-synced by this function. A future task can
-// revisit that if it turns out to matter.
+// Changing fileWatchMode takes effect for the next file-change event;
+// an in-flight south-bar notification or a pending diff review already
+// showing is left as-is (there's nothing to "re-apply" retroactively to
+// something already resolved down to a user decision).
 func ApplyEditorSettings(database *db.DB, groupID string, group *Group) error {
-	font, _, found, err := readEditorSettings(database, groupID)
+	font, fileWatchMode, found, err := readEditorSettings(database, groupID)
 	if err != nil {
 		return err
 	}
 	if found {
 		group.fonts.Set(font)
+		group.fileWatchMode = fileWatchMode
 	}
 	return nil
 }
