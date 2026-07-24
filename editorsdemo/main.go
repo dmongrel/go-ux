@@ -5,10 +5,11 @@
 // own) so the tab bar, right-click split/move menus, resize-bar dragging,
 // live editing, Ctrl+scroll font sizing, Ctrl+S save (including "Save As"
 // for a tab with no FilePath yet), Markdown preview toggle, opening
-// arbitrary files, file watching, and persisted layout can all be
-// exercised by hand. Diff review (ProposeDiff) isn't wired to any
-// UI here yet — it's meant to be driven by a host app's own AI tooling,
-// not a manual demo action. Run with `go run ./editorsdemo`.
+// arbitrary files, file watching, persisted layout, and diff review
+// (Group.ProposeDiff — normally driven by a host app's own AI tooling,
+// not a person, but this demo's "Propose Diff..." button stands in for
+// that caller so the Accept/Cancel south-bar flow can be exercised by
+// hand) can all be exercised by hand. Run with `go run ./editorsdemo`.
 //
 // It lives in its own directory rather than at the repo root, for the
 // same one-`package main`-per-directory reason as dialogdemo/terminaldemo
@@ -171,7 +172,50 @@ func main() {
 		saveDialog.Show()
 	}
 
-	win.SetContent(container.NewBorder(openBtn, nil, nil, nil, group))
+	// Stands in for a host app's AI-assistant tooling: picks a file (same
+	// picker as openBtn), reads its current content, and lets the person
+	// running the demo type replacement text — then calls ProposeDiff so
+	// the resulting Accept/Cancel south-bar flow can be exercised by hand.
+	// A real caller (e.g. Claude Code's own /ide-style integration in the
+	// host app) would supply newText itself and skip this button/dialog
+	// entirely, calling group.ProposeDiff directly.
+	diffBtn := widget.NewButton("Propose Diff...", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+			if reader == nil {
+				return // user cancelled
+			}
+			path := reader.URI().Path()
+			reader.Close()
+
+			oldText, err := os.ReadFile(path)
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+
+			entry := widget.NewMultiLineEntry()
+			entry.SetText(string(oldText))
+			entry.Wrapping = fyne.TextWrapWord
+
+			editDialog := dialog.NewCustomConfirm("Propose Diff: "+filepath.Base(path),
+				"Propose", "Cancel", entry, func(confirmed bool) {
+					if !confirmed {
+						return
+					}
+					if err := group.ProposeDiff(path, entry.Text); err != nil {
+						dialog.ShowError(err, win)
+					}
+				}, win)
+			editDialog.Resize(fyne.NewSize(600, 500))
+			editDialog.Show()
+		}, win)
+	})
+
+	win.SetContent(container.NewBorder(container.NewHBox(openBtn, diffBtn), nil, nil, nil, group))
 	win.Resize(fyne.NewSize(1024, 700))
 	win.Show()
 
