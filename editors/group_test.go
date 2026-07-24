@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	fynetest "fyne.io/fyne/v2/test"
+
+	"go-ux/test"
 )
 
 func TestNewGroupStartsWithSinglePrimaryPane(t *testing.T) {
@@ -211,6 +213,56 @@ func TestClosingLastTabInNonPrimaryPaneCollapsesSplit(t *testing.T) {
 	walkPanes(g.root, func(p *Pane) { visited = append(visited, p) })
 	if len(visited) != 1 || visited[0] != g.primary {
 		t.Fatalf("expected [g.primary], got %v", visited)
+	}
+}
+
+// TestWithBatchedSaveDefersPersistenceUntilBatchCompletes is a
+// regression/behavior test for withBatchedSave (group.go): lower-level
+// building blocks like splitPane/Pane.AddTab each call notifyChanged on
+// their own so they persist correctly when called directly, but a single
+// user action (SplitRight/MoveRight) that calls several of them in
+// sequence should only actually write to the database once, not several
+// times over, for that one action.
+func TestWithBatchedSaveDefersPersistenceUntilBatchCompletes(t *testing.T) {
+	app := fynetest.NewApp()
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("test.NewDB: %v", err)
+	}
+	defer d.Close()
+
+	g := NewGroupFromSettings(app, d, "g-batch")
+	seed := NewTab("seed", "seed.md", "", "")
+	g.AddTab(seed) // persists immediately (not inside any batch)
+
+	panesBefore, _, err := d.LoadEditorLayout("g-batch")
+	if err != nil {
+		t.Fatalf("LoadEditorLayout (before): %v", err)
+	}
+	if len(panesBefore) != 1 {
+		t.Fatalf("precondition: expected 1 persisted pane, got %d", len(panesBefore))
+	}
+
+	var panesMidBatch int
+	g.withBatchedSave(func() {
+		g.splitPane(g.primary, axisHorizontal) // a lower-level building block; its own internal notifyChanged call should be suppressed here
+		mid, _, err := d.LoadEditorLayout("g-batch")
+		if err != nil {
+			t.Fatalf("LoadEditorLayout (mid-batch): %v", err)
+		}
+		panesMidBatch = len(mid)
+	})
+
+	panesAfter, _, err := d.LoadEditorLayout("g-batch")
+	if err != nil {
+		t.Fatalf("LoadEditorLayout (after): %v", err)
+	}
+
+	if panesMidBatch != 1 {
+		t.Errorf("persisted layout had %d panes mid-batch, want 1 (unchanged — the split's save should be suppressed until the batch completes)", panesMidBatch)
+	}
+	if len(panesAfter) < 2 {
+		t.Errorf("persisted layout had %d panes after the batch completed, want >= 2 (reflecting the split)", len(panesAfter))
 	}
 }
 

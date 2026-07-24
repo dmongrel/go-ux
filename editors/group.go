@@ -56,6 +56,14 @@ type Group struct {
 	groupID   string // caller-chosen, unique per Group instance persisted independently — meaningless if database is nil
 	restoring bool   // held true while NewGroupFromSettings is replaying a persisted layout (AddTab etc. run as part of that replay) so notifyChanged doesn't fire mid-restore and overwrite the still-under-construction tree with g.root's stale pre-restore shape — same guard pattern as treestate.restoring
 
+	// batchDepth, while > 0, makes notifyChanged a no-op instead of
+	// actually saving — see withBatchedSave's doc comment. A depth
+	// counter, not a bool, so a batched operation (e.g. movePane's
+	// auto-split-then-move) that itself calls another batched building
+	// block (splitPane) doesn't have the inner call's completion turn
+	// batching off early while the outer one is still in progress.
+	batchDepth int
+
 	// fonts is this Group's own independent font-size state (font.go),
 	// Ctrl+scroll-adjustable from any Pane's content area — unlike
 	// terminal's single package-global FontSettings shared by every open
@@ -64,10 +72,9 @@ type Group struct {
 	fonts *fontsettings.State
 
 	// fileWatchMode is FileWatchModeAuto or FileWatchModeNotify
-	// (settings_schema.go/watch.go), read once from database at
-	// NewGroupFromSettings time (default FileWatchModeNotify for
-	// NewGroup's no-database case — see watch.go's doc comment on why it's
-	// not re-synced live via ApplyEditorSettings).
+	// (settings_schema.go/watch.go) — read once from database at
+	// NewGroupFromSettings time, and re-synced live by ApplyEditorSettings
+	// (settings_schema.go) after a settings-window OK/Apply.
 	fileWatchMode string
 
 	// watcher/watchedFiles are file-watching state (watch.go) — watcher is
@@ -120,8 +127,9 @@ func (g *Group) Close() {
 // ENTIRE current layout immediately — matching SaveEditorLayout's
 // full-replace design and this package's "live, not just on close"
 // persistence decision. A no-op if database is nil (NewGroup-only
-// callers) or while a persisted layout is being replayed (see
-// g.restoring's doc comment).
+// callers), while a persisted layout is being replayed (see
+// g.restoring's doc comment), or while a batched operation is in
+// progress (see withBatchedSave).
 //
 // Also syncs every split's live drag offset back into the node tree first
 // (see node.live's doc comment in split.go) — Fyne's container.Split has
@@ -130,13 +138,34 @@ func (g *Group) Close() {
 // recent resize get captured the next time anything else triggers a
 // save, rather than never at all.
 func (g *Group) notifyChanged() {
-	if g.database == nil || g.restoring {
+	if g.database == nil || g.restoring || g.batchDepth > 0 {
 		return
 	}
 	syncOffsets(g.root)
 	panes, tabs := g.buildPersistedLayout()
 	if err := g.database.SaveEditorLayout(g.groupID, panes, tabs); err != nil {
 		log.Printf("editors: save layout: %v", err)
+	}
+}
+
+// withBatchedSave runs fn with notifyChanged suppressed for its duration,
+// then performs exactly one real save afterward (if database is set).
+// Several of this package's own lower-level building blocks each call
+// notifyChanged on their own (Pane.AddTab, closePane, splitPane) so that
+// calling any one of them directly still persists correctly — but an
+// operation that's really one user action calling several of them in
+// sequence (movePane's auto-split-then-move: splitPane, then AddTab/
+// setActive on the target, then possibly closePane on the now-empty
+// source) would otherwise trigger the same full-layout save 2-4 times
+// over for that single action. Harmless (SaveEditorLayout is a full
+// replace, so extra calls are idempotent, not incorrect) but wasteful.
+// MoveRight/MoveDown/SplitRight/SplitDown wrap their bodies in this.
+func (g *Group) withBatchedSave(fn func()) {
+	g.batchDepth++
+	fn()
+	g.batchDepth--
+	if g.batchDepth == 0 {
+		g.notifyChanged()
 	}
 }
 
@@ -154,18 +183,23 @@ func (g *Group) nextPaneID() string {
 	return fmt.Sprintf("pane-%d", g.nextID)
 }
 
-// SplitRight splits source horizontally, adding a fresh empty Pane to its
-// right. A no-op if source is not eligible to split further (see
-// canSplit) — a real UI would grey out the menu item, but Phase 1's
-// showContextMenu always offers all items, an acceptable known gap.
+// SplitRight splits source horizontally, adding a new Pane to its right
+// showing the same active Tab. A no-op if source is not eligible to
+// split further (see canSplit) — pane.go's showContextMenu greys out the
+// menu item in that case, but this itself stays defensive since it's
+// also reachable directly, not just via that menu.
+//
+// Wrapped in withBatchedSave (group.go) since splitPane's own internal
+// AddTab call already triggers a save on its own — without this, a bare
+// SplitRight/SplitDown would persist the layout twice for one call.
 func (g *Group) SplitRight(source *Pane) {
-	g.splitPane(source, axisHorizontal)
+	g.withBatchedSave(func() { g.splitPane(source, axisHorizontal) })
 }
 
-// SplitDown splits source vertically, adding a fresh empty Pane below it.
-// Same eligibility rule as SplitRight.
+// SplitDown splits source vertically, adding a new Pane below it.
+// Same eligibility rule and batched-save reasoning as SplitRight.
 func (g *Group) SplitDown(source *Pane) {
-	g.splitPane(source, axisVertical)
+	g.withBatchedSave(func() { g.splitPane(source, axisVertical) })
 }
 
 func (g *Group) splitPane(source *Pane, axis splitAxis) *Pane {
@@ -197,13 +231,18 @@ func (g *Group) splitPane(source *Pane, axis splitAxis) *Pane {
 // MoveRight moves tab out of source and into the Pane to source's right,
 // auto-creating that split (via SplitRight) first if one doesn't already
 // exist — decided "auto-split-then-move" semantics.
+//
+// Wrapped in withBatchedSave: the auto-split path alone can otherwise
+// trigger up to 3-4 redundant full-layout saves for this one call
+// (splitPane's own AddTab + its own save, then this method's own
+// AddTab/closePane) — see withBatchedSave's doc comment.
 func (g *Group) MoveRight(source *Pane, tab *Tab) {
-	g.movePane(source, tab, axisHorizontal)
+	g.withBatchedSave(func() { g.movePane(source, tab, axisHorizontal) })
 }
 
 // MoveDown is MoveRight's vertical counterpart.
 func (g *Group) MoveDown(source *Pane, tab *Tab) {
-	g.movePane(source, tab, axisVertical)
+	g.withBatchedSave(func() { g.movePane(source, tab, axisVertical) })
 }
 
 func (g *Group) movePane(source *Pane, tab *Tab, axis splitAxis) {
