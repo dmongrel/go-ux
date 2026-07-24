@@ -221,9 +221,17 @@ func main() {
 			entry.SetText(string(oldText))
 			entry.Wrapping = fyne.TextWrapWord
 
+			hint := widget.NewLabel("Edit the text below, then click Propose to preview the diff against the file on disk. Proposing with no edits shows an unchanged (all-equal, no red/green) diff — that's correct, not a bug.")
+			hint.Wrapping = fyne.TextWrapWord
+
 			editDialog := dialog.NewCustomConfirm("Propose Diff: "+filepath.Base(path),
-				"Propose", "Cancel", entry, func(confirmed bool) {
+				"Propose", "Cancel", container.NewBorder(hint, nil, nil, nil, entry), func(confirmed bool) {
 					if !confirmed {
+						return
+					}
+					if entry.Text == string(oldText) {
+						dialog.ShowInformation("No changes made",
+							"The text wasn't edited, so there's nothing to diff — the proposed text matches the file on disk exactly.", win)
 						return
 					}
 					if err := group.ProposeDiff(path, entry.Text); err != nil {
