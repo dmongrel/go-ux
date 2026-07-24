@@ -204,18 +204,46 @@ func TestLiveChangesPersistAndReloadRoundTrips(t *testing.T) {
 	}
 }
 
+// TestNotifyChangedIsNoOpWithoutDatabase exercises every call site that
+// invokes notifyChanged internally (AddTab, SplitRight, MoveRight,
+// closeTabRequested) plus a direct notifyChanged() call, all against a
+// Group with a nil database (NewGroup, not NewGroupFromSettings) — the
+// actual thing being tested is that none of them panic or otherwise
+// misbehave trying to reach a nil *db.DB. That's the whole contract: a
+// no-op-by-design function with no return value and no observable side
+// effect (by definition — there's no database to have one on) has
+// nothing else to assert on, so "doesn't crash across every path that
+// calls it" is the meaningful check here, not just "the tree still has
+// the right shape after one split" (which doesn't actually exercise
+// notifyChanged's nil-database behavior at all on its own).
 func TestNotifyChangedIsNoOpWithoutDatabase(t *testing.T) {
 	app := fynetest.NewApp()
 
 	g := NewGroup(app)
-	g.AddTab(NewTab("t1", "T1", "/a.txt", "hello"))
+	if g.database != nil {
+		t.Fatalf("precondition: expected g.database == nil for a plain NewGroup Group")
+	}
+
+	tab := NewTab("t1", "T1", "/a.txt", "hello")
+	g.AddTab(tab)
+	g.notifyChanged()
 	g.SplitRight(g.primary)
 
-	var count int
-	walkPanes(g.root, func(*Pane) { count++ })
-	if count != 2 {
-		t.Fatalf("expected 2 panes after split, got %d", count)
+	var visited []*Pane
+	walkPanes(g.root, func(p *Pane) { visited = append(visited, p) })
+	if len(visited) != 2 {
+		t.Fatalf("expected 2 panes after split, got %d", len(visited))
 	}
+	var secondary *Pane
+	for _, p := range visited {
+		if p != g.primary {
+			secondary = p
+		}
+	}
+
+	g.MoveRight(g.primary, tab)
+	secondary.closeTabRequested(tab)
+	g.notifyChanged()
 }
 
 func TestMalformedPersistedDataFallsBackToDefault(t *testing.T) {

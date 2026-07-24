@@ -182,6 +182,43 @@ func TestMoveRightToExistingAdjacentPane(t *testing.T) {
 	}
 }
 
+// TestMoveRightOfJustSplitTabToExistingAdjacentPaneDoesNotDuplicate is a
+// regression test for a real bug found while strengthening an unrelated
+// test: movePane's "target already has this tab" dedup check
+// (target.hasTab, which decides setActive vs. AddTab) only ran inside
+// the auto-split branch. Moving the SAME tab a Split had just copied
+// into an ALREADY-existing adjacent pane (no auto-split needed — the
+// case this test covers) skipped that check entirely, so AddTab ran
+// unconditionally and silently duplicated the tab pointer in the
+// target's tabs slice.
+func TestMoveRightOfJustSplitTabToExistingAdjacentPaneDoesNotDuplicate(t *testing.T) {
+	fynetest.NewApp()
+
+	g := NewGroup(nil)
+	seed := NewTab("seed", "seed.md", "", "")
+	g.AddTab(seed)
+	g.SplitRight(g.primary) // secondary now already has `seed` too (split copies the active tab)
+
+	var secondary *Pane
+	walkPanes(g.root, func(p *Pane) {
+		if p != g.primary {
+			secondary = p
+		}
+	})
+	if secondary == nil {
+		t.Fatalf("expected a secondary pane after SplitRight")
+	}
+
+	g.MoveRight(g.primary, seed) // moving the same tab split just copied, to that already-existing adjacent pane
+
+	if len(secondary.tabs) != 1 {
+		t.Fatalf("secondary.tabs has %d entries, want 1 (no duplicate) — got %v", len(secondary.tabs), secondary.tabs)
+	}
+	if secondary.active != seed {
+		t.Errorf("secondary.active = %v, want seed", secondary.active)
+	}
+}
+
 func TestClosingLastTabInNonPrimaryPaneCollapsesSplit(t *testing.T) {
 	fynetest.NewApp()
 

@@ -247,7 +247,6 @@ func (g *Group) MoveDown(source *Pane, tab *Tab) {
 
 func (g *Group) movePane(source *Pane, tab *Tab, axis splitAxis) {
 	target, ok := adjacentPane(g.root, source, axis)
-	alreadyInTarget := false
 	if !ok {
 		if g.splitPane(source, axis) == nil {
 			return // source wasn't eligible to split; nothing to move into
@@ -256,12 +255,18 @@ func (g *Group) movePane(source *Pane, tab *Tab, axis splitAxis) {
 		if !ok {
 			return // shouldn't happen after a successful split, but be defensive
 		}
-		// splitPane just copied source's (then-)active tab into target —
-		// if that happened to be the same tab this move is relocating,
-		// target already has it; adding it again below would duplicate
-		// it, so just make sure it's the active one there instead.
-		alreadyInTarget = target.hasTab(tab)
 	}
+	// The target may already have tab — either splitPane (just above)
+	// copied it there, or it was already adjacent and had already
+	// received the same shared-Document tab some other way (e.g.
+	// Move-Right immediately after a Split copied that very tab into
+	// this same adjacent pane). Either way, AddTab-ing it again below
+	// would duplicate it, so just make sure it's the active one there
+	// instead. This check used to only run in the auto-split branch
+	// above, missing the already-adjacent case — a real bug (silent tab
+	// duplication) caught by a strengthened test that happened to move
+	// a just-split tab to an already-existing adjacent pane.
+	alreadyInTarget := target.hasTab(tab)
 
 	stillHasTabs := source.removeTabLocally(tab)
 	source.tabBar.Tabs = source.tabs
