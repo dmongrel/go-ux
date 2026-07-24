@@ -11,8 +11,18 @@ import (
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 )
+
+// markdownParser is shared by every renderMarkdown call. extension.Table
+// is the only goldmark extension enabled — GFM's other pieces
+// (strikethrough, autolinks, task lists) aren't part of this package's
+// supported subset yet, and enabling Table alone keeps the AST switch in
+// renderBlock/renderInline from having to handle extension node kinds
+// this package doesn't render.
+var markdownParser = goldmark.New(goldmark.WithExtensions(extension.Table)).Parser()
 
 // isMarkdownFile reports whether path looks like a Markdown file by
 // extension — the signal the tab bar's preview toggle (tabbar.go) and
@@ -29,7 +39,10 @@ func isMarkdownFile(path string) bool {
 // widget.NewRichTextFromMarkdown — RichText's own built-in Markdown
 // support covers too small a subset (no nested blockquotes/lists, no
 // tables) for a prose-editing tool to avoid hitting believable
-// limitations on real chapter text.
+// limitations on real chapter text. Tables (GFM's pipe-table syntax) are
+// supported via goldmark's extension.Table, rendered as a fixed-column
+// grid (see renderTable) — the only goldmark extension this package
+// enables.
 //
 // This is a snapshot render, not a live view: it does not update itself
 // if the underlying Document changes elsewhere (e.g. edited in another
@@ -39,7 +52,7 @@ func isMarkdownFile(path string) bool {
 // subscription while already in preview. Acceptable for now; revisit if
 // that turns out to matter in practice.
 func renderMarkdown(src []byte) fyne.CanvasObject {
-	root := goldmark.DefaultParser().Parse(text.NewReader(src))
+	root := markdownParser.Parse(text.NewReader(src))
 	return container.NewVBox(renderBlockChildren(root, src)...)
 }
 
@@ -64,6 +77,8 @@ func renderBlock(n ast.Node, src []byte) fyne.CanvasObject {
 		return renderCodeBlock(n, src)
 	case ast.KindList:
 		return renderList(n.(*ast.List), src)
+	case extast.KindTable:
+		return renderTable(n.(*extast.Table), src)
 	case ast.KindParagraph, ast.KindTextBlock:
 		return richTextFromInlines(n, src, widget.RichTextStyleInline)
 	default:
@@ -111,6 +126,37 @@ func renderList(list *ast.List, src []byte) fyne.CanvasObject {
 		items = append(items, container.NewBorder(nil, nil, widget.NewLabel(marker), nil, body))
 	}
 	return container.NewVBox(items...)
+}
+
+// renderTable renders t as a fixed-column grid: one widget.RichText cell
+// per column, the header row (t's first child, a *extast.TableHeader) in
+// bold, every following *extast.TableRow plain. Column count comes from
+// the header row's cell count, since goldmark's table extension requires
+// every row to have exactly that many cells (padding/truncating short or
+// long rows itself during parsing).
+func renderTable(t *extast.Table, src []byte) fyne.CanvasObject {
+	header, _ := t.FirstChild().(*extast.TableHeader)
+	numCols := 0
+	if header != nil {
+		for c := header.FirstChild(); c != nil; c = c.NextSibling() {
+			numCols++
+		}
+	}
+	if numCols == 0 {
+		numCols = 1
+	}
+
+	var cells []fyne.CanvasObject
+	for row := t.FirstChild(); row != nil; row = row.NextSibling() {
+		style := widget.RichTextStyleInline
+		if row.Kind() == extast.KindTableHeader {
+			style.TextStyle.Bold = true
+		}
+		for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+			cells = append(cells, richTextFromInlines(cell, src, style))
+		}
+	}
+	return container.NewGridWithColumns(numCols, cells...)
 }
 
 // richTextFromInlines walks n's inline children and returns a single

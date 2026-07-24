@@ -234,6 +234,48 @@ func TestRenderMarkdownBlockquoteNestsInner(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownTableRendersHeaderAndRowsInAColumnGrid(t *testing.T) {
+	fynetest.NewApp()
+
+	src := "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |"
+	root := asVBox(t, renderMarkdown([]byte(src)))
+	if len(root.Objects) != 1 {
+		t.Fatalf("got %d top-level blocks, want 1 (the table)", len(root.Objects))
+	}
+	grid, ok := root.Objects[0].(*fyne.Container)
+	if !ok {
+		t.Fatalf("block is %T, want *fyne.Container (table grid)", root.Objects[0])
+	}
+	// 2 columns x 3 rows (header + 2 data rows) = 6 cells.
+	if len(grid.Objects) != 6 {
+		t.Fatalf("got %d grid cells, want 6", len(grid.Objects))
+	}
+
+	headerCell, ok := grid.Objects[0].(*widget.RichText)
+	if !ok {
+		t.Fatalf("header cell is %T, want *widget.RichText", grid.Objects[0])
+	}
+	if richTextPlainString(headerCell) != "Name" {
+		t.Errorf("header cell text = %q, want %q", richTextPlainString(headerCell), "Name")
+	}
+	headerSeg, ok := headerCell.Segments[0].(*widget.TextSegment)
+	if !ok || !headerSeg.Style.TextStyle.Bold {
+		t.Errorf("header cell is not bold")
+	}
+
+	dataCell, ok := grid.Objects[2].(*widget.RichText)
+	if !ok {
+		t.Fatalf("data cell is %T, want *widget.RichText", grid.Objects[2])
+	}
+	if richTextPlainString(dataCell) != "Alice" {
+		t.Errorf("data cell text = %q, want %q", richTextPlainString(dataCell), "Alice")
+	}
+	dataSeg, ok := dataCell.Segments[0].(*widget.TextSegment)
+	if !ok || dataSeg.Style.TextStyle.Bold {
+		t.Errorf("data cell is unexpectedly bold")
+	}
+}
+
 // richTextPlainString concatenates every TextSegment's Text in rt — a
 // test helper since widget.RichText has no single "give me the plain
 // text" accessor.
