@@ -161,9 +161,28 @@ func (p *Pane) rebuildCenterContent() {
 	}
 
 	if p.previewMode && isMarkdownFile(p.active.FilePath) {
-		preview := container.NewScroll(renderMarkdown([]byte(p.active.Doc.Text())))
+		tab := p.active
+		preview := container.NewScroll(renderMarkdown([]byte(tab.Doc.Text())))
 		p.center.Objects = []fyne.CanvasObject{preview}
 		p.center.Refresh()
+
+		// Keep the preview live rather than a one-time snapshot: if the
+		// Document changes while this Pane is toggled into preview — an
+		// edit in another Pane showing the same Document, or an accepted
+		// diff/reload — re-render from the new text. Also refreshes the
+		// tab bar's dirty indicator on the same terms as the editable
+		// branch below, since that listener isn't registered while in
+		// preview mode.
+		lastDirty := tab.Dirty()
+		tab.Doc.RegisterListener(p.tabBar, func(text string) {
+			preview.Content = renderMarkdown([]byte(text))
+			preview.Refresh()
+			if tab.Dirty() != lastDirty {
+				lastDirty = tab.Dirty()
+				p.tabBar.Refresh()
+			}
+		})
+		p.contentCleanup = func() { tab.Doc.UnregisterListener(p.tabBar) }
 		return
 	}
 

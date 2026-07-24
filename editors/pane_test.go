@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	fynetest "fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 )
 
 func TestNewPaneWithNoTabsShowsEmptyPlaceholder(t *testing.T) {
@@ -116,8 +117,8 @@ func TestPaneTogglePreviewSwitchesToRenderedMarkdown(t *testing.T) {
 	if _, ok := scroll.Content.(*fyne.Container); !ok {
 		t.Fatalf("preview scroll content is %T, want *fyne.Container (renderMarkdown's VBox)", scroll.Content)
 	}
-	if p.contentCleanup != nil {
-		t.Errorf("contentCleanup is non-nil while showing a preview snapshot (nothing to clean up)")
+	if p.contentCleanup == nil {
+		t.Errorf("contentCleanup is nil while showing a preview — preview registers a live Document listener now (see TestPaneMarkdownPreviewLiveUpdatesOnDocumentChange), so there IS something to clean up")
 	}
 	if p.tabBar.PreviewMode != true {
 		t.Errorf("tabBar.PreviewMode = false, want true after togglePreview")
@@ -139,6 +140,32 @@ func TestPaneTogglePreviewTwiceReturnsToEditableContent(t *testing.T) {
 	}
 	if p.contentCleanup == nil {
 		t.Errorf("contentCleanup is nil after returning to editable content, want a real cleanup func")
+	}
+}
+
+// TestPaneMarkdownPreviewLiveUpdatesOnDocumentChange is a regression test
+// for a documented gap: the preview used to be rendered once from a
+// snapshot of the text at the moment togglePreview was called, and never
+// updated again while still toggled on, even if the Document changed
+// (e.g. edited from another Pane showing the same Document).
+func TestPaneMarkdownPreviewLiveUpdatesOnDocumentChange(t *testing.T) {
+	fynetest.NewApp()
+
+	p := newPane(nil, "p", true)
+	tab := NewTab("t1", "chapter1.md", "chapter1.md", "original text")
+	p.AddTab(tab)
+	p.togglePreview()
+
+	tab.Doc.SetText("# Updated Heading")
+
+	scroll := p.center.Objects[0].(*container.Scroll)
+	vbox := scroll.Content.(*fyne.Container)
+	rt, ok := vbox.Objects[0].(*widget.RichText)
+	if !ok {
+		t.Fatalf("preview's first block is %T, want *widget.RichText", vbox.Objects[0])
+	}
+	if got := richTextPlainString(rt); got != "Updated Heading" {
+		t.Errorf("preview text = %q, want %q — preview did not live-update after the Document changed", got, "Updated Heading")
 	}
 }
 
