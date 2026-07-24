@@ -258,7 +258,21 @@ func (g *Group) closePane(p *Pane) {
 
 // rebuildContent reconstructs the Group's displayed content from the
 // current root shape. Called after every structural change above.
+//
+// Also prunes any empty non-primary pane from g.root first (pruneEmpty —
+// the same self-heal layoutstate.go's restore path already uses), rather
+// than relying solely on each individual call site (closeTabRequested,
+// movePane) to remember to check "did this leave a pane with zero tabs?"
+// itself. closeTabRequested/movePane's own checks stay in place (they
+// give the immediate, correct behavior — auto-closing the instant a
+// pane's last tab is closed or moved out, in the same user action,
+// rather than waiting for the next rebuild); this is a second,
+// independent guarantee that the invariant "no non-primary pane has zero
+// tabs" holds after every structural mutation, regardless of which path
+// produced the emptiness — including ones not anticipated by an explicit
+// check at the time it was written.
 func (g *Group) rebuildContent() {
+	g.root = pruneEmpty(g.root, g.primary)
 	g.container.Objects = []fyne.CanvasObject{rebuild(g.root)}
 	g.container.Refresh()
 }

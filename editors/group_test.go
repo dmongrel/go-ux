@@ -214,6 +214,47 @@ func TestClosingLastTabInNonPrimaryPaneCollapsesSplit(t *testing.T) {
 	}
 }
 
+// TestRebuildContentSelfHealsAnEmptyNonPrimaryPaneFromAnyPath is a
+// defense-in-depth regression test: rather than relying solely on
+// closeTabRequested/movePane individually remembering to check "did this
+// leave a pane empty?", rebuildContent itself now prunes any empty
+// non-primary pane (pruneEmpty) on every call, regardless of what
+// produced the emptiness. This simulates a pane going empty through some
+// path OTHER than the two known, already-covered ones (directly clearing
+// its tabs, bypassing closeTabRequested/movePane entirely) and confirms
+// the very next rebuildContent call still cleans it up.
+func TestRebuildContentSelfHealsAnEmptyNonPrimaryPaneFromAnyPath(t *testing.T) {
+	fynetest.NewApp()
+
+	g := NewGroup(nil)
+	seed := NewTab("seed", "seed.md", "", "")
+	g.AddTab(seed)
+	g.SplitRight(g.primary)
+
+	var secondary *Pane
+	walkPanes(g.root, func(p *Pane) {
+		if p != g.primary {
+			secondary = p
+		}
+	})
+	if secondary == nil {
+		t.Fatalf("expected a secondary pane after SplitRight")
+	}
+
+	// Empty it out directly, without going through
+	// closeTabRequested/removeTabLocally at all.
+	secondary.tabs = nil
+	secondary.active = nil
+
+	g.rebuildContent()
+
+	var visited []*Pane
+	walkPanes(g.root, func(p *Pane) { visited = append(visited, p) })
+	if len(visited) != 1 || visited[0] != g.primary {
+		t.Fatalf("expected rebuildContent to prune the empty secondary pane, got %v", visited)
+	}
+}
+
 func TestClosingLastTabInPrimaryPaneDoesNotRemoveIt(t *testing.T) {
 	fynetest.NewApp()
 
