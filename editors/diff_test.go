@@ -5,8 +5,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	fynetest "fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
 )
 
 func TestComputeDiffIdenticalTextIsAllEqual(t *testing.T) {
@@ -73,9 +73,13 @@ func TestRenderDiffColorsDeleteAndInsertRows(t *testing.T) {
 		{diffInsert, "added\n"},
 	}
 	obj := renderDiff(lines)
-	vbox, ok := obj.(*fyne.Container)
+	override, ok := obj.(*container.ThemeOverride)
 	if !ok {
-		t.Fatalf("renderDiff returned %T, want *fyne.Container", obj)
+		t.Fatalf("renderDiff returned %T, want *container.ThemeOverride", obj)
+	}
+	vbox, ok := override.Content.(*fyne.Container)
+	if !ok {
+		t.Fatalf("override.Content = %T, want *fyne.Container", override.Content)
 	}
 	if len(vbox.Objects) != 3 {
 		t.Fatalf("got %d rows, want 3", len(vbox.Objects))
@@ -88,7 +92,7 @@ func TestRenderDiffColorsDeleteAndInsertRows(t *testing.T) {
 	}
 	rowText := func(i int) string {
 		row := vbox.Objects[i].(*fyne.Container)
-		return row.Objects[1].(*widget.Label).Text
+		return row.Objects[1].(*canvas.Text).Text
 	}
 
 	if rowColor(1) != diffDeleteColor {
@@ -97,7 +101,7 @@ func TestRenderDiffColorsDeleteAndInsertRows(t *testing.T) {
 	if rowColor(2) != diffInsertColor {
 		t.Errorf("insert row color = %v, want %v", rowColor(2), diffInsertColor)
 	}
-	if rowText(0) != "same" || rowText(1) != "removed" || rowText(2) != "added" {
-		t.Errorf("row texts = %q, %q, %q, want %q, %q, %q", rowText(0), rowText(1), rowText(2), "same", "removed", "added")
+	if rowText(0) != "  same" || rowText(1) != "- removed" || rowText(2) != "+ added" {
+		t.Errorf("row texts = %q, %q, %q, want %q, %q, %q", rowText(0), rowText(1), rowText(2), "  same", "- removed", "+ added")
 	}
 }
