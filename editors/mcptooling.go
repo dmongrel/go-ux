@@ -116,11 +116,25 @@ func (g *Group) findTabByPath(path string) (*Tab, bool) {
 // leaving the Document untouched. Both are plain synchronous methods, no
 // goroutine/channel API — same documented UI-goroutine-only contract as
 // AddTab/SplitRight/etc. (see group.go's doc comment).
+//
+// If path was already open but not the active tab of its Pane (a real
+// reported bug: with several tabs open, OpenFile happily returns the
+// existing, already-open-but-not-currently-shown Tab, pendingDiff got
+// set on it, and then nothing visibly happened — no Pane's active tab
+// matched it, so showDiffReview never ran anywhere), this activates the
+// Tab in every Pane that already holds it first, guaranteeing the diff
+// actually appears somewhere rather than silently attaching to a Tab
+// nothing is currently displaying.
 func (g *Group) ProposeDiff(path string, newText string) error {
 	tab, err := g.OpenFile(path)
 	if err != nil {
 		return err
 	}
+	walkPanes(g.root, func(p *Pane) {
+		if p.hasTab(tab) && p.active != tab {
+			p.setActive(tab)
+		}
+	})
 	tab.pendingDiff = &pendingDiff{newText: newText}
 	walkPanes(g.root, func(p *Pane) {
 		if p.active == tab {

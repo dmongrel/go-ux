@@ -333,3 +333,45 @@ func TestProposeDiffOnAlreadyOpenTabReusesIt(t *testing.T) {
 		t.Errorf("primary pane has %d tabs, want 1", len(g.primary.tabs))
 	}
 }
+
+// TestProposeDiffOnAlreadyOpenButNotActiveTabActivatesAndShowsDiff is a
+// regression test for a real reported bug: with several tabs open,
+// proposing a diff against a file that's already open but NOT the
+// currently-active tab in its Pane silently did nothing — OpenFile
+// happily returned the existing Tab, pendingDiff got set on it, but no
+// Pane's active tab matched it (walkPanes' "p.active == tab" check), so
+// showDiffReview never ran anywhere and the diff never appeared.
+// ProposeDiff must activate the Tab first if it isn't already, in every
+// Pane that holds it, so the diff is guaranteed to show up somewhere.
+func TestProposeDiffOnAlreadyOpenButNotActiveTabActivatesAndShowsDiff(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+	path := writeTempFile(t, "chapter1.txt", "old text")
+
+	target, err := g.OpenFile(path)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	// Open and switch to a second, unrelated tab — target is now open but
+	// no longer the active tab of the primary pane.
+	other := NewTab("other", "other.txt", "", "other content")
+	g.AddTab(other)
+	if g.primary.active != other {
+		t.Fatalf("precondition: expected 'other' to be the active tab, got %v", g.primary.active)
+	}
+
+	if err := g.ProposeDiff(path, "new text"); err != nil {
+		t.Fatalf("ProposeDiff: %v", err)
+	}
+
+	if g.primary.active != target {
+		t.Fatalf("ProposeDiff did not activate the target tab: active = %v, want the tab for %s", g.primary.active, path)
+	}
+	if g.primary.southBar.Mode() != SouthBarDiffReview {
+		t.Fatalf("southBar.Mode() = %v, want SouthBarDiffReview — the diff never actually showed", g.primary.southBar.Mode())
+	}
+	if target.pendingDiff == nil || target.pendingDiff.newText != "new text" {
+		t.Errorf("target.pendingDiff = %+v, want newText %q", target.pendingDiff, "new text")
+	}
+}
