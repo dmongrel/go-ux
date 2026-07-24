@@ -1,15 +1,26 @@
 // Command editorsdemo is a manual/visual entry point for go-ux/editors: a
 // window embedding one editors.Group, pre-opened with 4 tabs (3 plain-text
-// placeholders plus one real Markdown file), plus an "Open File..." button
-// (this demo's own, since editors.Group.OpenFile has no picker UI of its
-// own) so the tab bar, right-click split/move menus, resize-bar dragging,
-// live editing, Ctrl+scroll font sizing, Ctrl+S save (including "Save As"
-// for a tab with no FilePath yet), Markdown preview toggle, opening
-// arbitrary files, file watching, persisted layout, and diff review
-// (Group.ProposeDiff — normally driven by a host app's own AI tooling,
-// not a person, but this demo's "Propose Diff..." button stands in for
-// that caller so the Accept/Cancel south-bar flow can be exercised by
-// hand) can all be exercised by hand. Run with `go run ./editorsdemo`.
+// placeholders plus one real Markdown file), plus "Open File..."/"Propose
+// Diff..." buttons so the tab bar, right-click split/move menus,
+// resize-bar dragging, live editing, Ctrl+scroll font sizing, Ctrl+S save
+// (including "Save As" for a tab with no FilePath yet), Markdown preview
+// toggle, opening arbitrary files, file watching, persisted layout, and
+// diff review can all be exercised by hand. Run with `go run ./editorsdemo`.
+//
+// "Open File..." and "Propose Diff..." are purely this test harness's own
+// stand-ins, not part of editors' real API surface (editors.Group.OpenFile/
+// ProposeDiff have no picker UI of their own by design — see mcptooling.go).
+// The intended real host app triggers these through its own menu (e.g.
+// File -> Open), not a demo button; this file exists only to exercise the
+// underlying Group methods by hand.
+//
+// File/save pickers use github.com/ncruces/zenity — the platform's native
+// system dialog — rather than Fyne's own built-in (non-native) file
+// dialog, so what a host app's real File -> Open would show is exercised
+// here too. zenity's calls block the calling goroutine (they run a real
+// native dialog process/window), so they're always called via `go func()`
+// off the Fyne UI goroutine, with the result marshaled back via fyne.Do
+// per this repo's threading convention (CLAUDE.md).
 //
 // It lives in its own directory rather than at the repo root, for the
 // same one-`package main`-per-directory reason as dialogdemo/terminaldemo
@@ -22,6 +33,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -33,9 +45,47 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/ncruces/zenity"
+
 	"go-ux/db"
 	"go-ux/editors"
 )
+
+// pickFileOpen runs zenity's native "open file" dialog on its own
+// goroutine (see the package doc comment on why) and, if the user picked a
+// file, calls onPicked back on the Fyne UI goroutine via fyne.Do. A silent
+// no-op on cancel; any other error shows in a Fyne error dialog (an error
+// dialog isn't a *file* dialog, so it stays Fyne-native here).
+func pickFileOpen(win fyne.Window, title string, onPicked func(path string)) {
+	go func() {
+		path, err := zenity.SelectFile(zenity.Title(title))
+		if err != nil {
+			if errors.Is(err, zenity.ErrCanceled) {
+				return
+			}
+			fyne.Do(func() { dialog.ShowError(err, win) })
+			return
+		}
+		fyne.Do(func() { onPicked(path) })
+	}()
+}
+
+// pickFileSave mirrors pickFileOpen for zenity's native "save file" dialog,
+// pre-filling defaultName as the suggested filename and confirming before
+// overwriting an existing file.
+func pickFileSave(win fyne.Window, title, defaultName string, onPicked func(path string)) {
+	go func() {
+		path, err := zenity.SelectFileSave(zenity.Title(title), zenity.Filename(defaultName), zenity.ConfirmOverwrite())
+		if err != nil {
+			if errors.Is(err, zenity.ErrCanceled) {
+				return
+			}
+			fyne.Do(func() { dialog.ShowError(err, win) })
+			return
+		}
+		fyne.Do(func() { onPicked(path) })
+	}()
+}
 
 // dbPath is fixed (not a fresh temp file per run) so two consecutive
 // `go run ./editorsdemo` invocations share the same persisted layout —
@@ -127,70 +177,40 @@ func main() {
 
 	win := fyneApp.NewWindow("Editors Demo")
 
-	// A file-open button — group.OpenFile itself is a plain Go API with no
-	// picker UI of its own (by design: the editors package leaves file
-	// choosing to the host app, see editors.md's "Diff review
-	// (mcp_tooling)" section), so this demo needs to supply one to let
-	// OpenFile actually be exercised by hand rather than only from Go code.
+	// A file-open button standing in for a host app's real File -> Open
+	// menu item (see the package doc comment) — group.OpenFile itself is a
+	// plain Go API with no picker UI of its own.
 	openBtn := widget.NewButton("Open File...", func() {
-		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err != nil {
-				dialog.ShowError(err, win)
-				return
-			}
-			if reader == nil {
-				return // user cancelled
-			}
-			defer reader.Close()
-
-			path := reader.URI().Path()
+		pickFileOpen(win, "Open File", func(path string) {
 			if _, err := group.OpenFile(path); err != nil {
 				dialog.ShowError(err, win)
 			}
-		}, win)
+		})
 	})
 
 	// Ctrl+S on a tab with no FilePath (e.g. one seeded in memory, never
 	// opened from disk) calls this instead of writing silently nowhere —
 	// same "host supplies the picker" reasoning as openBtn above.
 	group.OnSaveAsRequested = func(tab *editors.Tab) {
-		saveDialog := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if err != nil {
-				dialog.ShowError(err, win)
-				return
-			}
-			if writer == nil {
-				return // user cancelled
-			}
-			writer.Close()
-
-			if err := group.SaveTabAs(tab, writer.URI().Path()); err != nil {
+		pickFileSave(win, "Save As", tab.Title, func(path string) {
+			if err := group.SaveTabAs(tab, path); err != nil {
 				dialog.ShowError(err, win)
 			}
-		}, win)
-		saveDialog.SetFileName(tab.Title)
-		saveDialog.Show()
+		})
 	}
 
 	// Stands in for a host app's AI-assistant tooling: picks a file (same
-	// picker as openBtn), reads its current content, and lets the person
-	// running the demo type replacement text — then calls ProposeDiff so
-	// the resulting Accept/Cancel south-bar flow can be exercised by hand.
-	// A real caller (e.g. Claude Code's own /ide-style integration in the
-	// host app) would supply newText itself and skip this button/dialog
-	// entirely, calling group.ProposeDiff directly.
+	// native picker as openBtn), reads its current content, and lets the
+	// person running the demo type replacement text — then calls
+	// ProposeDiff so the resulting Accept/Cancel south-bar flow can be
+	// exercised by hand. A real caller (e.g. Claude Code's own /ide-style
+	// integration in the host app) would supply newText itself and skip
+	// this button/dialog entirely, calling group.ProposeDiff directly. The
+	// replacement-text entry itself stays a Fyne dialog (zenity has no
+	// editable multi-line text widget) — only the file *picker* switched
+	// to the native one.
 	diffBtn := widget.NewButton("Propose Diff...", func() {
-		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err != nil {
-				dialog.ShowError(err, win)
-				return
-			}
-			if reader == nil {
-				return // user cancelled
-			}
-			path := reader.URI().Path()
-			reader.Close()
-
+		pickFileOpen(win, "Propose Diff: choose a file", func(path string) {
 			oldText, err := os.ReadFile(path)
 			if err != nil {
 				dialog.ShowError(err, win)
@@ -212,7 +232,7 @@ func main() {
 				}, win)
 			editDialog.Resize(fyne.NewSize(600, 500))
 			editDialog.Show()
-		}, win)
+		})
 	})
 
 	win.SetContent(container.NewBorder(container.NewHBox(openBtn, diffBtn), nil, nil, nil, group))
