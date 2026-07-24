@@ -84,6 +84,15 @@ type Group struct {
 	// copies a Tab into a second Pane).
 	watcher      *fsnotify.Watcher
 	watchedFiles map[string]bool
+
+	// OnSaveAsRequested, if set by the host app, is called when Ctrl+S is
+	// pressed on a tab with no FilePath (see mcptooling.go's requestSaveAs
+	// and Ctrl+S's own doc comment in font.go). This package has no file
+	// picker of its own (same design decision as OpenFile — see its doc
+	// comment) — the host is expected to show its own save dialog and
+	// then call SaveTabAs with the chosen path. Left nil, Ctrl+S on such a
+	// tab is simply a no-op.
+	OnSaveAsRequested func(tab *Tab)
 }
 
 // NewGroup builds a Group with a single, empty primary Pane. Call AddTab

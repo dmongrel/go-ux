@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	fynetest "fyne.io/fyne/v2/test"
+
+	"go-ux/test"
 )
 
 func writeTempFile(t *testing.T, name, content string) string {
@@ -111,6 +113,106 @@ func TestSaveTabWithNoFilePathReturnsError(t *testing.T) {
 	if err := g.SaveTab(tab); err == nil {
 		t.Fatalf("SaveTab(tab with no FilePath) returned nil error")
 	}
+}
+
+func TestSaveTabAsWritesFileAndSetsPathAndTitle(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	tab := NewTab("t1", "untitled", "", "some text")
+	g.AddTab(tab)
+	path := filepath.Join(t.TempDir(), "chapter1.txt")
+
+	if err := g.SaveTabAs(tab, path); err != nil {
+		t.Fatalf("SaveTabAs: %v", err)
+	}
+
+	if tab.FilePath != path {
+		t.Errorf("FilePath = %q, want %q", tab.FilePath, path)
+	}
+	if tab.Title != "chapter1.txt" {
+		t.Errorf("Title = %q, want %q", tab.Title, "chapter1.txt")
+	}
+	if tab.Dirty() {
+		t.Errorf("Dirty() = true after SaveTabAs, want false")
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back %s: %v", path, err)
+	}
+	if string(onDisk) != "some text" {
+		t.Errorf("file on disk = %q, want %q", string(onDisk), "some text")
+	}
+}
+
+func TestSaveTabAsEmptyPathReturnsError(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	tab := NewTab("t1", "untitled", "", "some text")
+	if err := g.SaveTabAs(tab, ""); err == nil {
+		t.Fatalf("SaveTabAs(empty path) returned nil error")
+	}
+}
+
+func TestSaveTabAsPersistsLayoutChange(t *testing.T) {
+	app := fynetest.NewApp()
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("test.NewDB: %v", err)
+	}
+	defer d.Close()
+
+	g := NewGroupFromSettings(app, d, "g-saveas")
+	t.Cleanup(g.Close)
+	tab := NewTab("t1", "untitled", "", "some text")
+	g.AddTab(tab)
+	path := filepath.Join(t.TempDir(), "chapter1.txt")
+
+	if err := g.SaveTabAs(tab, path); err != nil {
+		t.Fatalf("SaveTabAs: %v", err)
+	}
+
+	_, tabs, err := d.LoadEditorLayout("g-saveas")
+	if err != nil {
+		t.Fatalf("LoadEditorLayout: %v", err)
+	}
+	found := false
+	for _, pt := range tabs {
+		if pt.FilePath == path {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("persisted layout does not contain the new FilePath %q after SaveTabAs: %+v", path, tabs)
+	}
+}
+
+func TestRequestSaveAsCallsOnSaveAsRequestedHandler(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	tab := NewTab("t1", "untitled", "", "some text")
+	var got *Tab
+	g.OnSaveAsRequested = func(tab *Tab) { got = tab }
+
+	g.requestSaveAs(tab)
+
+	if got != tab {
+		t.Errorf("OnSaveAsRequested was not called with the expected tab")
+	}
+}
+
+func TestRequestSaveAsNilHandlerDoesNotPanic(t *testing.T) {
+	app := fynetest.NewApp()
+	g := NewGroup(app)
+	t.Cleanup(g.Close)
+
+	tab := NewTab("t1", "untitled", "", "some text")
+	g.requestSaveAs(tab) // OnSaveAsRequested is nil — must not panic
 }
 
 func TestProposeDiffSwitchesActivePaneIntoDiffReview(t *testing.T) {

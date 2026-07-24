@@ -48,6 +48,46 @@ func (g *Group) SaveTab(tab *Tab) error {
 	return nil
 }
 
+// SaveTabAs is the host app's entry point for completing a "Save As": call
+// it with the path the host's own file-save dialog returned (see
+// OnSaveAsRequested, on Group) after Ctrl+S on a tab with no FilePath.
+// Sets tab.FilePath and Title (to path's base name), writes the current
+// Document text there, marks the Document clean, refreshes every tab bar
+// showing tab, and persists the layout (FilePath is part of the persisted
+// db.EditorTab row, unlike SaveTab's plain overwrite, which never changes
+// FilePath and so never needs to touch the layout).
+func (g *Group) SaveTabAs(tab *Tab, path string) error {
+	if path == "" {
+		return errors.New("editors: SaveTabAs called with an empty path")
+	}
+	if err := os.WriteFile(path, []byte(tab.Doc.Text()), 0o644); err != nil {
+		return err
+	}
+	tab.FilePath = path
+	tab.Title = filepath.Base(path)
+	tab.Doc.MarkClean()
+	walkPanes(g.root, func(p *Pane) {
+		if p.hasTab(tab) {
+			p.tabBar.Refresh()
+		}
+	})
+	g.notifyChanged()
+	return nil
+}
+
+// requestSaveAs is Ctrl+S's fallback when tab has no FilePath: this
+// package leaves file-picker UI to the host app (see OpenFile's doc
+// comment on the same "host supplies the picker" pattern), so it can't
+// show a "Save As" dialog itself — it calls OnSaveAsRequested, if the
+// host set one, so the host can show its own save dialog and call
+// SaveTabAs with the chosen path. A no-op if the host never set a
+// handler.
+func (g *Group) requestSaveAs(tab *Tab) {
+	if g.OnSaveAsRequested != nil {
+		g.OnSaveAsRequested(tab)
+	}
+}
+
 // findTabByPath searches every Pane's tabs for one whose FilePath matches
 // path.
 func (g *Group) findTabByPath(path string) (*Tab, bool) {

@@ -192,6 +192,10 @@ func (p *Pane) rebuildCenterContent() {
 			if p.group == nil {
 				return
 			}
+			if tab.FilePath == "" {
+				p.group.requestSaveAs(tab)
+				return
+			}
 			if err := p.group.SaveTab(tab); err != nil {
 				log.Printf("editors: save %s: %v", tab.FilePath, err)
 			}

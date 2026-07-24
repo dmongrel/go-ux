@@ -3,9 +3,10 @@
 // placeholders plus one real Markdown file), plus an "Open File..." button
 // (this demo's own, since editors.Group.OpenFile has no picker UI of its
 // own) so the tab bar, right-click split/move menus, resize-bar dragging,
-// live editing, Ctrl+scroll font sizing, Ctrl+S save, Markdown preview
-// toggle, opening arbitrary files, file watching, and persisted layout can
-// all be exercised by hand. Diff review (ProposeDiff) isn't wired to any
+// live editing, Ctrl+scroll font sizing, Ctrl+S save (including "Save As"
+// for a tab with no FilePath yet), Markdown preview toggle, opening
+// arbitrary files, file watching, and persisted layout can all be
+// exercised by hand. Diff review (ProposeDiff) isn't wired to any
 // UI here yet — it's meant to be driven by a host app's own AI tooling,
 // not a manual demo action. Run with `go run ./editorsdemo`.
 //
@@ -147,6 +148,28 @@ func main() {
 			}
 		}, win)
 	})
+
+	// Ctrl+S on a tab with no FilePath (e.g. one seeded in memory, never
+	// opened from disk) calls this instead of writing silently nowhere —
+	// same "host supplies the picker" reasoning as openBtn above.
+	group.OnSaveAsRequested = func(tab *editors.Tab) {
+		saveDialog := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, win)
+				return
+			}
+			if writer == nil {
+				return // user cancelled
+			}
+			writer.Close()
+
+			if err := group.SaveTabAs(tab, writer.URI().Path()); err != nil {
+				dialog.ShowError(err, win)
+			}
+		}, win)
+		saveDialog.SetFileName(tab.Title)
+		saveDialog.Show()
+	}
 
 	win.SetContent(container.NewBorder(openBtn, nil, nil, nil, group))
 	win.Resize(fyne.NewSize(1024, 700))
