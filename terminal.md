@@ -99,16 +99,28 @@ ordering and close-on-exit off, rather than failing.
 chainable override (both `width` and `height` must be positive or it's a
 no-op), `Show` is non-blocking.
 
-`RegisterSettings` seeds a root "Terminal" node with `default_shell`
-(`PropertyEnum`, options from `DetectShells()`), `close_on_exit`
-(`PropertyBool`, default `"true"`), and four font properties — `font_family`
-(`PropertyEnum`, options from `DetectMonospaceFonts()` plus a `"(default)"`
-sentinel meaning the bundled font, which is also the seeded default),
-`font_size` (`PropertyInt`, default `13`), `line_height` and `column_width`
-(`PropertyFloat`, both default `1.0`, multipliers of the font's natural
-per-cell size) — in `database`'s registry, if one isn't already present
+`RegisterSettings` seeds a root "Terminal" node with the package's full
+22-row property set in `database`'s registry, if one isn't already present
 (idempotent — safe on every app startup, same as `test.SeedExample`'s role
-for `test_settings.go`).
+for `test_settings.go`). Only a subset actually drive live behavior today:
+`default_shell` (`PropertyEnum`, options from `DetectShells()`),
+`close_on_exit` (`PropertyBool`, default `"true"`), and four font
+properties — `font_family` (`PropertyEnum`, options from
+`DetectMonospaceFonts()` plus a `"(default)"` sentinel meaning the bundled
+font, which is also the seeded default), `font_size` (`PropertyInt`,
+default `13`), `line_height` and `column_width` (`PropertyFloat`, both
+default `1.0`, multipliers of the font's natural per-cell size).
+
+The remaining rows (`default_tab_name`, `use_app_title_as_tab_name`,
+`start_directory`, `scrollback_lines`, `cursor_blink`, `cursor_shape`,
+`min_contrast_ratio`, `audible_bell`, `mouse_reporting`,
+`copy_on_selection`, `paste_on_middle_click`, `override_host_shortcuts`,
+`focus_escape_key`, `highlight_hyperlinks`, `shell_integration`,
+`show_command_separators`) are seeded placeholders for features this
+package hasn't implemented yet — a settings dialog shows them and their
+defaults, but changing one currently has no observable effect. See
+`terminal/settings_schema.go`'s exported `Key*` constants for the exact
+property keys.
 
 `ApplyFontSettings(database *db.DB) error` re-reads those four font
 properties and pushes them into the live, process-wide font state every
@@ -226,11 +238,13 @@ list of what's not implemented.
   transport.
 - **Deferred / not implemented**: cursor shape variants and contrast
   handling, hyperlink detection, mouse reporting, text selection and
-  copy/paste, terminal bell, font fallback and configurable line-height,
-  OSC 133/OSC 7 shell-integration (command-boundary markers, live-cwd
-  capture for UI state). `RegisterSettings` seeds only two properties
-  (`default_shell`, `close_on_exit`) — a placeholder slice of a much larger
-  planned settings surface (~22 properties), not the full design.
+  copy/paste, terminal bell, OSC 133/OSC 7 shell-integration
+  (command-boundary markers, live-cwd capture for UI state). `RegisterSettings`
+  now seeds the full 22-row property set (see "Settings / DB integration"
+  above), but most rows are seeded placeholders with no consuming behavior
+  yet — the properties above exist in the registry and are visible in a
+  settings dialog, but changing them has no effect until the corresponding
+  feature is implemented.
 - **Known open rendering bugs**, found via manual visual testing (see
   render.go and vtstate.go), not yet root-caused:
   - Glyph/line rendering is visually inconsistent — some horizontal lines
