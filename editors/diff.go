@@ -76,6 +76,28 @@ var (
 	diffInsertColor = color.NRGBA{R: 76, G: 175, B: 80, A: 60}
 )
 
+// diffRun is a maximal contiguous stretch of lines sharing the same kind
+// — e.g. 3 consecutive inserted lines. renderDiff renders one rectangle
+// per run, not one per line (see its own doc comment for why).
+type diffRun struct {
+	kind  diffLineKind
+	lines []string
+}
+
+// groupDiffRuns collapses lines into maximal contiguous same-kind runs,
+// preserving order.
+func groupDiffRuns(lines []diffLine) []diffRun {
+	var runs []diffRun
+	for _, l := range lines {
+		if n := len(runs); n > 0 && runs[n-1].kind == l.kind {
+			runs[n-1].lines = append(runs[n-1].lines, l.text)
+			continue
+		}
+		runs = append(runs, diffRun{kind: l.kind, lines: []string{l.text}})
+	}
+	return runs
+}
+
 // renderDiff builds a read-only, line-by-line colored view of lines:
 // deleted lines prefixed "- " and tinted red, inserted lines prefixed
 // "+ " and tinted green, unchanged lines plain (a leading "  " so every
@@ -88,16 +110,26 @@ var (
 // text, which left a visible gap of unhighlighted background between the
 // colored rect and the text itself; canvas.Text has no such padding, so
 // the highlight now hugs the text exactly.
+//
+// Renders one rectangle per contiguous run of same-kind lines (groupDiffRuns),
+// not one rectangle per individual line: two adjacent same-color
+// rectangles, positioned edge-to-edge by container.NewVBox's own layout
+// math, occasionally left a hairline of the background showing through
+// at their shared boundary — a sub-pixel rounding artifact of stacking
+// many separately-drawn rectangles, visible as a faint 1px line between
+// some (not all) lines of an otherwise-uniform colored block. A single
+// rectangle spanning an entire run has no such internal seam, since nothing
+// is drawn where the seam previously was.
 func renderDiff(lines []diffLine) fyne.CanvasObject {
 	th := fyne.CurrentApp().Settings().Theme()
 	variant := fyne.CurrentApp().Settings().ThemeVariant()
 	fg := th.Color(theme.ColorNameForeground, variant)
 
-	rows := make([]fyne.CanvasObject, 0, len(lines))
-	for _, l := range lines {
+	bands := make([]fyne.CanvasObject, 0, len(lines))
+	for _, run := range groupDiffRuns(lines) {
 		prefix := "  "
 		var fill color.Color = color.Transparent
-		switch l.kind {
+		switch run.kind {
 		case diffDelete:
 			prefix = "- "
 			fill = diffDeleteColor
@@ -106,20 +138,25 @@ func renderDiff(lines []diffLine) fyne.CanvasObject {
 			fill = diffInsertColor
 		}
 
-		text := canvas.NewText(prefix+strings.TrimRight(l.text, "\n"), fg)
-		text.TextStyle = fyne.TextStyle{Monospace: true}
+		texts := make([]fyne.CanvasObject, 0, len(run.lines))
+		for _, l := range run.lines {
+			text := canvas.NewText(prefix+strings.TrimRight(l, "\n"), fg)
+			text.TextStyle = fyne.TextStyle{Monospace: true}
+			texts = append(texts, text)
+		}
 
 		rect := canvas.NewRectangle(fill)
-		rows = append(rows, container.NewStack(rect, text))
+		bands = append(bands, container.NewStack(rect, container.NewVBox(texts...)))
 	}
 
 	// container.NewVBox's default layout also inserts theme.SizeNamePadding
-	// between every row — on top of Label's own padding (fixed above),
-	// this left visible gaps of unhighlighted background between adjacent
-	// colored rows. zeroPaddingTheme collapses that inter-row gap to 0,
-	// same technique font.go's sizeOverrideTheme uses for a different size
-	// name, so rows sit flush against each other.
-	return container.NewThemeOverride(container.NewVBox(rows...), &zeroPaddingTheme{base: th})
+	// between every row/band (nested VBoxes included, since ThemeOverride
+	// applies recursively to every descendant widget) — on top of Label's
+	// own padding (fixed above), this left visible gaps of unhighlighted
+	// background between adjacent lines/bands. zeroPaddingTheme collapses
+	// every such gap to 0, same technique font.go's sizeOverrideTheme uses
+	// for a different size name, so rows sit flush against each other.
+	return container.NewThemeOverride(container.NewVBox(bands...), &zeroPaddingTheme{base: th})
 }
 
 // zeroPaddingTheme wraps a base fyne.Theme, overriding only

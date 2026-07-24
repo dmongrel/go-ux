@@ -92,7 +92,8 @@ func TestRenderDiffColorsDeleteAndInsertRows(t *testing.T) {
 	}
 	rowText := func(i int) string {
 		row := vbox.Objects[i].(*fyne.Container)
-		return row.Objects[1].(*canvas.Text).Text
+		lineBox := row.Objects[1].(*fyne.Container)
+		return lineBox.Objects[0].(*canvas.Text).Text
 	}
 
 	if rowColor(1) != diffDeleteColor {
@@ -103,5 +104,52 @@ func TestRenderDiffColorsDeleteAndInsertRows(t *testing.T) {
 	}
 	if rowText(0) != "  same" || rowText(1) != "- removed" || rowText(2) != "+ added" {
 		t.Errorf("row texts = %q, %q, %q, want %q, %q, %q", rowText(0), rowText(1), rowText(2), "  same", "- removed", "+ added")
+	}
+}
+
+// TestGroupDiffRunsMergesConsecutiveSameKindLines is a regression test for
+// a rendering seam: renderDiff used to draw one rectangle per line, and
+// two adjacent same-color rectangles occasionally left a hairline of
+// background showing through at their shared boundary (a rounding
+// artifact of stacking many separately-drawn rectangles). Grouping
+// consecutive same-kind lines into one run means renderDiff draws a
+// single rectangle across the whole run, with no internal seam.
+func TestGroupDiffRunsMergesConsecutiveSameKindLines(t *testing.T) {
+	fynetest.NewApp()
+
+	lines := []diffLine{
+		{diffEqual, "a\n"},
+		{diffDelete, "b\n"},
+		{diffDelete, "c\n"},
+		{diffDelete, "d\n"},
+		{diffInsert, "e\n"},
+		{diffInsert, "f\n"},
+		{diffEqual, "g\n"},
+	}
+	runs := groupDiffRuns(lines)
+	if len(runs) != 4 {
+		t.Fatalf("got %d runs, want 4 (equal, delete x3, insert x2, equal): %+v", len(runs), runs)
+	}
+	wantKinds := []diffLineKind{diffEqual, diffDelete, diffInsert, diffEqual}
+	wantLens := []int{1, 3, 2, 1}
+	for i, run := range runs {
+		if run.kind != wantKinds[i] {
+			t.Errorf("runs[%d].kind = %v, want %v", i, run.kind, wantKinds[i])
+		}
+		if len(run.lines) != wantLens[i] {
+			t.Errorf("runs[%d] has %d lines, want %d", i, len(run.lines), wantLens[i])
+		}
+	}
+
+	obj := renderDiff(lines)
+	override := obj.(*container.ThemeOverride)
+	vbox := override.Content.(*fyne.Container)
+	if len(vbox.Objects) != 4 {
+		t.Fatalf("renderDiff produced %d top-level bands, want 4 (one per run, not one per line)", len(vbox.Objects))
+	}
+	deleteBand := vbox.Objects[1].(*fyne.Container)
+	deleteLines := deleteBand.Objects[1].(*fyne.Container)
+	if len(deleteLines.Objects) != 3 {
+		t.Errorf("delete band has %d text lines, want 3 (b, c, d all under one rectangle)", len(deleteLines.Objects))
 	}
 }

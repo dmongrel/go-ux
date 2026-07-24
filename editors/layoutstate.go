@@ -169,13 +169,37 @@ func rebuildTreeFromPersisted(g *Group, panes []db.EditorPane, tabs []db.EditorT
 			}
 			rowTabs := tabsByPane[row.ID]
 			sortTabsByOrder(rowTabs)
+			// Deliberately NOT p.AddTab per tab here: AddTab always calls
+			// setActive, which does a full content rebuild (real text
+			// layout/wrapping for that tab's Document) — for N restored
+			// tabs that's N throwaway rebuilds (every earlier tab's
+			// content is immediately discarded the moment the next tab
+			// is added) plus a further, fully redundant rebuild of
+			// whichever tab ends up active, once more, right after this
+			// loop. For a large prose file this is not a rounding error:
+			// on real chapter-length text (hundreds of lines), a single
+			// rebuild measured in the ~200ms-19s range depending on size,
+			// so restoring even a handful of tabs could add up to a
+			// startup delay of many seconds with nothing shown on screen
+			// meanwhile (this is what a real "editorsdemo looks hung on
+			// launch" report traced back to). Instead, populate p.tabs
+			// directly and call setActive exactly once, for the one tab
+			// that actually ends up displayed.
 			var activeTab *Tab
 			for _, t := range rowTabs {
 				tab := NewTab(t.FilePath, filepath.Base(t.FilePath), t.FilePath, restoredTabText(t.FilePath))
-				p.AddTab(tab)
+				p.tabs = append(p.tabs, tab)
+				g.startWatching(tab)
 				if t.IsActive {
 					activeTab = tab
 				}
+			}
+			if activeTab == nil && len(p.tabs) > 0 {
+				// No tab in the persisted row was marked active (shouldn't
+				// happen from this package's own writes, but defensive) —
+				// match AddTab's own "the most recently added tab is
+				// active" behavior by falling back to the last one.
+				activeTab = p.tabs[len(p.tabs)-1]
 			}
 			if activeTab != nil {
 				p.setActive(activeTab)

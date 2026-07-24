@@ -101,6 +101,65 @@ func TestNewGroupFromSettingsMissingFileShowsClearPlaceholder(t *testing.T) {
 	}
 }
 
+// TestNewGroupFromSettingsRestoresCorrectActiveTabAmongSeveral is a
+// regression test for a real perf bug: rebuildTreeFromPersisted used to
+// call Pane.AddTab per restored tab, which always calls setActive (a full
+// content rebuild) — for N tabs in one pane that's N-1 wasted rebuilds
+// (each immediately discarded the moment the next tab is added) plus a
+// further, fully redundant rebuild of whichever tab ends up active, once
+// more, right after the loop. Fixed to populate p.tabs directly and call
+// setActive exactly once. This test pins down the functional contract
+// that fix must preserve: with several tabs restored into one pane, the
+// one whose persisted row has IsActive=true — not the first, not the
+// last — ends up p.active, and every tab is still present in order.
+func TestNewGroupFromSettingsRestoresCorrectActiveTabAmongSeveral(t *testing.T) {
+	app := fynetest.NewApp()
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("test.NewDB: %v", err)
+	}
+	defer d.Close()
+
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.txt")
+	pathB := filepath.Join(dir, "b.txt")
+	pathC := filepath.Join(dir, "c.txt")
+	for _, p := range []string{pathA, pathB, pathC} {
+		if err := os.WriteFile(p, []byte("content of "+filepath.Base(p)), 0o644); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
+	}
+
+	panes := []db.EditorPane{{ID: 1, IsPane: true, IsPrimary: true}}
+	tabs := []db.EditorTab{
+		{PaneID: 1, FilePath: pathA, TabOrder: 0, IsActive: false},
+		{PaneID: 1, FilePath: pathB, TabOrder: 1, IsActive: true},
+		{PaneID: 1, FilePath: pathC, TabOrder: 2, IsActive: false},
+	}
+	if err := d.SaveEditorLayout("g-multi-active", panes, tabs); err != nil {
+		t.Fatalf("SaveEditorLayout: %v", err)
+	}
+
+	g := NewGroupFromSettings(app, d, "g-multi-active")
+	g.Close()
+
+	if len(g.primary.tabs) != 3 {
+		t.Fatalf("primary pane has %d tabs, want 3", len(g.primary.tabs))
+	}
+	if g.primary.active == nil || g.primary.active.FilePath != pathB {
+		t.Fatalf("active tab FilePath = %v, want %q (the one persisted with IsActive=true)", g.primary.active, pathB)
+	}
+	if g.primary.active.Doc.Text() != "content of b.txt" {
+		t.Errorf("active tab's Doc.Text() = %q, want %q", g.primary.active.Doc.Text(), "content of b.txt")
+	}
+	wantOrder := []string{pathA, pathB, pathC}
+	for i, tab := range g.primary.tabs {
+		if tab.FilePath != wantOrder[i] {
+			t.Errorf("tabs[%d].FilePath = %q, want %q", i, tab.FilePath, wantOrder[i])
+		}
+	}
+}
+
 // TestLoadPrunesEmptyNonPrimaryPaneAndRePersists is a regression test for
 // a real report: a pre-bugfix build of splitPane could leave a non-primary
 // pane with zero tabs persisted to disk; simply fixing splitPane doesn't

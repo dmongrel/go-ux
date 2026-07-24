@@ -156,9 +156,22 @@ func main() {
 
 	// Idempotent — seeds the "Editors: <groupID>" settings node (font
 	// size, file_watch_mode) on a fresh db, no-ops if already present.
-	if err := editors.RegisterSettings(database, groupID); err != nil {
-		log.Printf("editors.RegisterSettings: %v", err)
-	}
+	//
+	// Run in the background, not inline here: on a fresh db this scans and
+	// opentype-parses every font installed on the machine
+	// (fontsettings.DetectMonospaceFonts, via SeedFontProperties), which
+	// took upward of 10 seconds on a machine with a large font collection
+	// — long enough that the window never got a chance to appear and the
+	// demo looked hung ("nothing appears, no errors"). RegisterSettings
+	// only writes to database; it doesn't touch any widget, so no fyne.Do
+	// is needed here. group.OpenFile/etc. are still safe to call the
+	// instant it finishes, since Group's own methods are UI-goroutine-only
+	// by contract, not dependent on RegisterSettings' completion.
+	go func() {
+		if err := editors.RegisterSettings(database, groupID); err != nil {
+			log.Printf("editors.RegisterSettings: %v", err)
+		}
+	}()
 
 	group := editors.NewGroupFromSettings(fyneApp, database, groupID)
 	defer group.Close() // stops the file-watching goroutine on exit
