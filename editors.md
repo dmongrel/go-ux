@@ -114,18 +114,23 @@ accepted approximation, not yet true visual-line numbering).
 Right-click a tab bar to get **Split Right**, **Split Down**, **Move
 Right**, **Move Down**, and **Close Tab**.
 
-- **Split** creates a new, empty `Pane` in the given direction. Nesting is
-  capped at one level, but independently per side: after an initial split,
-  either resulting pane can itself be split on the *other* axis (giving up
-  to 4 panes total, arranged as independent quadrants), but a pane that's
-  already the result of one split can't be split again.
+- **Split** creates a new `Pane` in the given direction, showing the same
+  active `Tab` as the source (see below). Nesting is capped at one level,
+  but independently per side: after an initial split, either resulting
+  pane can itself be split on the *other* axis (giving up to 4 panes
+  total, arranged as independent quadrants), but a pane that's already the
+  result of one split can't be split again.
 - **Move** relocates a tab to the adjacent pane on the given side. If that
   adjacent pane doesn't exist yet, Move auto-creates the split first (same
   as Split), then moves the tab into it — matching IntelliJ's own "Move
   Right creates a group if none exists" behavior.
 - Closing a non-primary pane's last tab closes that pane, collapsing the
   split. The original/primary pane can never be closed this way, even when
-  empty.
+  empty (it shows the "No file open" placeholder instead — see "Documents
+  and editing" above). This invariant — no non-primary pane is ever left
+  with zero tabs — is enforced twice: immediately, at the point a
+  close/move empties one; and again, unconditionally, on every subsequent
+  layout rebuild, so it holds regardless of what caused the emptiness.
 
 Since Split copies the same `Tab` (and so the same `Document`) into the new
 `Pane`, edits made in either pane after a split show up in both
