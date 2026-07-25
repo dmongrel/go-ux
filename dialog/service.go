@@ -113,6 +113,12 @@ func (s *Service) PickFile() (string, error) {
 	return s.app.Dialog.OpenFile().SetTitle("Open File").PromptForSingleSelection()
 }
 
+// PickFiles shows a native "Open Files" picker allowing more than one
+// selection, and returns the chosen paths — nil if the user cancels.
+func (s *Service) PickFiles() ([]string, error) {
+	return s.app.Dialog.OpenFile().SetTitle("Open Files").PromptForMultipleSelection()
+}
+
 // ShowCustom opens a window rendering spec's property form and blocks the
 // calling goroutine until the user clicks a button or closes the window —
 // matching go-ux/dialog.Dialog.Show's original blocking contract. Must be
