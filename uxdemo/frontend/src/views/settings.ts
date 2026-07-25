@@ -10,6 +10,7 @@ import {
 } from "../../bindings/go-ux/settings/service";
 import {PropertyType} from "../../bindings/go-ux/db/models";
 import type {Node as SettingsNode, Property} from "../../bindings/go-ux/db/models";
+import {Window as ThisWindow} from "@wailsio/runtime";
 
 // mountSettings is the Wails/JS replacement for go-ux/settings.Window: a
 // real nested tree (built from Node.ParentID, not a flat list) on the
@@ -236,11 +237,11 @@ export function mountSettings(root: HTMLElement) {
     });
     (root.querySelector("#ok-btn") as HTMLButtonElement).addEventListener("click", async () => {
         await Apply();
-        window.close();
+        void ThisWindow.Close();
     });
     (root.querySelector("#cancel-btn") as HTMLButtonElement).addEventListener("click", () => {
         Cancel();
-        window.close();
+        void ThisWindow.Close();
     });
 
     (async () => {
