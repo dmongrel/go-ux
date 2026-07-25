@@ -104,10 +104,16 @@ UI state the way there is for settings properties. `LoadUIState` returns
 `(nil, nil)` (no error) when nothing has been saved yet for that
 `componentID`, so always check for a nil blob before unmarshalling.
 
-Wails has no cross-platform window-position API either, so only size is
-practical to persist this way. Note this is not how `go-ux/settings` or
-`go-ux/treestate` actually persist their own state today — see
-`settings.md`/`treestate.md` for what they use instead.
+Wails v3 (checked against the exact version this repo pins,
+`v3.0.0-alpha2.117`) exposes `WebviewWindow.RelativePosition()`/
+`SetRelativePosition(x, y)` — position relative to the window's current
+screen WorkArea — so position is capturable the same way as size via this
+same UI-state mechanism; there's just no cross-platform *move event* to
+hook (`WindowDidMove` exists only on macOS), so live capture means polling
+`RelativePosition()` on a timer the same way you'd poll `Size()`, not a
+callback. Note this is not how `go-ux/settings` or `go-ux/treestate`
+actually persist their own state today — see `settings.md`/`treestate.md`
+for what they use instead.
 
 ## The settings registry API (for reference)
 
@@ -128,12 +134,31 @@ func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, va
 to seed the registry before constructing a `settings.Service` — see
 `go-ux/test.SeedExample` for a working example.
 
+## Refreshing a property's choices: UpdatePropertyOptions
+
+```go
+func (d *DB) UpdatePropertyOptions(nodeID int64, key string, enumOptions []string) error
+```
+
+`SaveProperties` only ever updates a property's `value` — there's no way to
+change `EnumOptions` through it. Use `UpdatePropertyOptions` instead for a
+`PropertyEnum` whose valid choices can change between launches (an OS voice
+list, a detected font list, etc.): call it once at startup with the
+freshly-enumerated options, before opening a `settings.Service` window. It
+does **not** touch the stored `value` and does **not** fire
+`OnPropertiesChanged` (that callback's contract is specifically "fires after
+`SaveProperties`" — this is a definitional change, not a user edit).
+Calling it with a `key` that changed a previously-selected value out of the
+new option set is not itself validated — the stale value stays until the
+user picks a new one via the settings UI.
+
 ## Constraints for callers
 
 - Don't open the SQLite file this package manages with any other SQLite
   library/connection — `db.DB` assumes it's the only writer.
-- `SaveProperties` and the UI-state writes are independent; there's no
-  cross-domain transaction tying a settings Apply to a UI-state save.
+- `SaveProperties`, `UpdatePropertyOptions`, and the UI-state writes are
+  independent; there's no cross-domain transaction tying a settings Apply to
+  a UI-state save or an options refresh.
 - All methods are synchronous, blocking SQLite calls — safe to call from
   any goroutine (there is no internal async/queueing), including directly
   from a Wails Service method (which Wails itself already dispatches off

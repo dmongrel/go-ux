@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"slices"
 	"testing"
 
 	"go-ux/db"
@@ -97,6 +98,69 @@ func TestSettingsRegistry(t *testing.T) {
 	}
 	if gotTabWidth != "8" {
 		t.Fatalf("tab_width = %q, want %q", gotTabWidth, "8")
+	}
+}
+
+func TestUpdatePropertyOptionsReplacesOptionsNotValue(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Voice Test", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "voice", "Voice", db.PropertyEnum, "Alice", []string{"Alice", "Bob"}); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	if err := d.UpdatePropertyOptions(nodeID, "voice", []string{"Alice", "Carol", "Dave"}); err != nil {
+		t.Fatalf("UpdatePropertyOptions: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if len(props) != 1 {
+		t.Fatalf("GetProperties: got %d properties, want 1", len(props))
+	}
+	got := props[0]
+	if got.Value != "Alice" {
+		t.Errorf("Value = %q, want %q (UpdatePropertyOptions must not touch it)", got.Value, "Alice")
+	}
+	wantOptions := []string{"Alice", "Carol", "Dave"}
+	if !slices.Equal(got.EnumOptions, wantOptions) {
+		t.Errorf("EnumOptions = %v, want %v", got.EnumOptions, wantOptions)
+	}
+}
+
+func TestUpdatePropertyOptionsDoesNotFireOnPropertiesChanged(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Voice Test", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "voice", "Voice", db.PropertyEnum, "Alice", []string{"Alice"}); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	fired := false
+	unsubscribe := d.OnPropertiesChanged(nodeID, func(map[string]string) { fired = true })
+	defer unsubscribe()
+
+	if err := d.UpdatePropertyOptions(nodeID, "voice", []string{"Alice", "Bob"}); err != nil {
+		t.Fatalf("UpdatePropertyOptions: %v", err)
+	}
+	if fired {
+		t.Error("OnPropertiesChanged fired for UpdatePropertyOptions — it should only fire for SaveProperties")
 	}
 }
 

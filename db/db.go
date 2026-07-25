@@ -215,6 +215,23 @@ func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, va
 	return nil
 }
 
+// UpdatePropertyOptions replaces a property's EnumOptions without touching
+// its stored value — for properties whose valid choices can change between
+// launches (e.g. an OS voice/font list), unlike SaveProperties which only
+// ever updates value. Unlike SaveProperties, this does not fire
+// OnPropertiesChanged: it's a definitional change (what choices exist), not
+// a user-edited value.
+func (d *DB) UpdatePropertyOptions(nodeID int64, key string, enumOptions []string) error {
+	_, err := d.conn.Exec(
+		`UPDATE settings_properties SET enum_options = ? WHERE node_id = ? AND key = ?`,
+		strings.Join(enumOptions, ","), nodeID, key,
+	)
+	if err != nil {
+		return fmt.Errorf("db: update property options: %w", err)
+	}
+	return nil
+}
+
 // SaveUIState writes the opaque UI-state blob for the given component, live
 // (immediately), overwriting any prior state.
 func (d *DB) SaveUIState(componentID string, blob []byte) error {

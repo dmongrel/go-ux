@@ -117,3 +117,10 @@ starting size (`OpenWindow`); per-window size persistence isn't wired up.
   registered against the same `db.DB` will both stage edits independently
   against the same underlying rows — last `Apply`/OK wins. Nothing in this
   package coordinates that.
+- A `PropertyEnum` whose valid choices can change between launches (an OS
+  voice or font list, say) needs its `EnumOptions` refreshed before this
+  package's `ListNodes`/`GetProperties`/`AllProperties` will reflect the
+  change — there's no live-reload for that either. Use `db.DB`'s
+  `UpdatePropertyOptions(nodeID, key, enumOptions)` (see `db.md`) at startup,
+  before constructing the `settings.Service`; `StageProperty`/`Apply` only
+  ever write `Value`, never `EnumOptions`.
