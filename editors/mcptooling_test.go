@@ -5,373 +5,294 @@ import (
 	"path/filepath"
 	"testing"
 
-	fynetest "fyne.io/fyne/v2/test"
-
+	"go-ux/fontsettings"
 	"go-ux/test"
 )
 
-func writeTempFile(t *testing.T, name, content string) string {
+func newTestService(t *testing.T) *Service {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write temp file: %v", err)
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
 	}
-	return path
+	t.Cleanup(func() { d.Close() })
+	s := NewService(nil, d, "test-group")
+	t.Cleanup(s.Close)
+	return s
 }
 
-func TestOpenFileReadsFromDisk(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "hello from disk")
+func TestNewServiceSeedsTwoDemoTabs(t *testing.T) {
+	s := newTestService(t)
+	tabs := s.ListTabs()
+	if len(tabs) != 2 {
+		t.Fatalf("len(tabs) = %d, want 2", len(tabs))
+	}
+	if tabs[0].Title != "Chapter One" || tabs[1].Title != "Notes" {
+		t.Errorf("tabs = %+v, want Chapter One, Notes", tabs)
+	}
+	for _, tab := range tabs {
+		if tab.Dirty {
+			t.Errorf("seeded tab %q is Dirty, want clean", tab.Title)
+		}
+	}
+}
 
-	tab, err := g.OpenFile(path)
+func TestNewTabAddsBlankUntitledTab(t *testing.T) {
+	s := newTestService(t)
+	tabs := s.NewTab()
+	if len(tabs) != 3 {
+		t.Fatalf("len(tabs) = %d, want 3", len(tabs))
+	}
+	last := tabs[len(tabs)-1]
+	if last.Title != "Untitled" || last.Text != "" {
+		t.Errorf("new tab = %+v, want Untitled/empty", last)
+	}
+}
+
+func TestSaveTabWithNoFilePathUpdatesInMemoryOnly(t *testing.T) {
+	s := newTestService(t)
+	id := s.ListTabs()[0].ID
+
+	tabs, err := s.SaveTab(id, "new content")
+	if err != nil {
+		t.Fatalf("SaveTab: %v", err)
+	}
+	if tabs[0].Text != "new content" {
+		t.Errorf("Text = %q, want %q", tabs[0].Text, "new content")
+	}
+}
+
+func TestSaveTabUnknownIDReturnsError(t *testing.T) {
+	s := newTestService(t)
+	if _, err := s.SaveTab("no-such-id", "x"); err != errUnknownTab {
+		t.Errorf("SaveTab(unknown) = %v, want errUnknownTab", err)
+	}
+}
+
+func TestOpenFileReadsRealFileAndAddsTab(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "chapter.md")
+	if err := os.WriteFile(path, []byte("real file content"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	tabs, err := s.OpenFile(path)
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	if tab.Doc.Text() != "hello from disk" {
-		t.Errorf("Doc.Text() = %q, want %q", tab.Doc.Text(), "hello from disk")
+	if len(tabs) != 3 {
+		t.Fatalf("len(tabs) = %d, want 3 (2 seeded + 1 opened)", len(tabs))
 	}
-	if tab.FilePath != path {
-		t.Errorf("FilePath = %q, want %q", tab.FilePath, path)
-	}
-	if tab.Title != "chapter1.txt" {
-		t.Errorf("Title = %q, want %q", tab.Title, "chapter1.txt")
+	opened := tabs[2]
+	if opened.Text != "real file content" || opened.FilePath != path {
+		t.Errorf("opened tab = %+v, want Text=%q FilePath=%q", opened, "real file content", path)
 	}
 }
 
-func TestOpenFileReturnsExistingTabWithoutDuplicating(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "hello")
+func TestOpenFileTwiceReturnsSameTabNotADuplicate(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "chapter.md")
+	if err := os.WriteFile(path, []byte("v1"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
-	tab1, err := g.OpenFile(path)
-	if err != nil {
+	if _, err := s.OpenFile(path); err != nil {
 		t.Fatalf("OpenFile (1st): %v", err)
 	}
-	tab2, err := g.OpenFile(path)
+	tabs, err := s.OpenFile(path)
 	if err != nil {
 		t.Fatalf("OpenFile (2nd): %v", err)
 	}
-
-	if tab1 != tab2 {
-		t.Errorf("second OpenFile returned a different *Tab, want the same one")
-	}
-	if len(g.primary.tabs) != 1 {
-		t.Errorf("primary pane has %d tabs, want 1 (no duplicate)", len(g.primary.tabs))
+	if len(tabs) != 3 {
+		t.Fatalf("len(tabs) = %d after opening the same path twice, want 3 (no duplicate)", len(tabs))
 	}
 }
 
-func TestOpenFileMissingFileReturnsError(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-
-	_, err := g.OpenFile(filepath.Join(t.TempDir(), "does-not-exist.txt"))
-	if err == nil {
-		t.Fatalf("OpenFile(missing file) returned nil error")
+func TestSaveTabWithFilePathWritesToDiskAndMarksClean(t *testing.T) {
+	s := newTestService(t)
+	path := filepath.Join(t.TempDir(), "chapter.md")
+	if err := os.WriteFile(path, []byte("v1"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-}
-
-func TestSaveTabWritesCurrentTextToDiskAndMarksClean(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-
-	path := writeTempFile(t, "chapter1.txt", "original")
-	tab, err := g.OpenFile(path)
+	tabs, err := s.OpenFile(path)
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	g.Close() // stop the real watcher before the write below — see watch_test.go's package doc comment
+	id := tabs[2].ID
 
-	tab.Doc.SetText("edited text")
-	if err := g.SaveTab(tab); err != nil {
+	if _, err := s.SaveTab(id, "v2"); err != nil {
 		t.Fatalf("SaveTab: %v", err)
 	}
 
-	if tab.Dirty() {
-		t.Errorf("Dirty() = true after SaveTab, want false")
-	}
 	onDisk, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read back %s: %v", path, err)
+		t.Fatalf("ReadFile: %v", err)
 	}
-	if string(onDisk) != "edited text" {
-		t.Errorf("file on disk = %q, want %q", string(onDisk), "edited text")
+	if string(onDisk) != "v2" {
+		t.Errorf("on-disk content = %q, want %q", onDisk, "v2")
 	}
-}
-
-func TestSaveTabWithNoFilePathReturnsError(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-
-	tab := NewTab("t1", "untitled", "", "some text")
-
-	if err := g.SaveTab(tab); err == nil {
-		t.Fatalf("SaveTab(tab with no FilePath) returned nil error")
+	got, _ := s.findTabByID(id)
+	if got.Dirty() {
+		t.Error("tab still Dirty after SaveTab wrote to disk")
 	}
 }
 
-func TestSaveTabAsWritesFileAndSetsPathAndTitle(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
+func TestSaveTabAsAdoptsNewPathAndWrites(t *testing.T) {
+	s := newTestService(t)
+	id := s.ListTabs()[0].ID // "Chapter One", no FilePath yet
+	path := filepath.Join(t.TempDir(), "saved-as.md")
 
-	tab := NewTab("t1", "untitled", "", "some text")
-	g.AddTab(tab)
-	path := filepath.Join(t.TempDir(), "chapter1.txt")
-
-	if err := g.SaveTabAs(tab, path); err != nil {
+	tabs, err := s.SaveTabAs(id, path)
+	if err != nil {
 		t.Fatalf("SaveTabAs: %v", err)
 	}
-
-	if tab.FilePath != path {
-		t.Errorf("FilePath = %q, want %q", tab.FilePath, path)
-	}
-	if tab.Title != "chapter1.txt" {
-		t.Errorf("Title = %q, want %q", tab.Title, "chapter1.txt")
-	}
-	if tab.Dirty() {
-		t.Errorf("Dirty() = true after SaveTabAs, want false")
+	if tabs[0].FilePath != path || tabs[0].Title != "saved-as.md" {
+		t.Errorf("tab = %+v, want FilePath=%q Title=%q", tabs[0], path, "saved-as.md")
 	}
 	onDisk, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read back %s: %v", path, err)
+		t.Fatalf("ReadFile: %v", err)
 	}
-	if string(onDisk) != "some text" {
-		t.Errorf("file on disk = %q, want %q", string(onDisk), "some text")
-	}
-}
-
-func TestSaveTabAsEmptyPathReturnsError(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-
-	tab := NewTab("t1", "untitled", "", "some text")
-	if err := g.SaveTabAs(tab, ""); err == nil {
-		t.Fatalf("SaveTabAs(empty path) returned nil error")
+	if string(onDisk) != "# Chapter One\n\nIt was a dark and stormy night...\n" {
+		t.Errorf("on-disk content = %q, want the tab's original text", onDisk)
 	}
 }
 
-func TestSaveTabAsPersistsLayoutChange(t *testing.T) {
-	app := fynetest.NewApp()
+func TestSaveTabAsEmptyPathIsAnError(t *testing.T) {
+	s := newTestService(t)
+	id := s.ListTabs()[0].ID
+	if _, err := s.SaveTabAs(id, ""); err == nil {
+		t.Error("SaveTabAs(\"\") = nil error, want an error")
+	}
+}
+
+func TestProposeAcceptDiffFlow(t *testing.T) {
+	s := newTestService(t)
+	id := s.ListTabs()[0].ID
+
+	tabs, err := s.ProposeDiff(id, "proposed text")
+	if err != nil {
+		t.Fatalf("ProposeDiff: %v", err)
+	}
+	if tabs[0].PendingDiff == nil || *tabs[0].PendingDiff != "proposed text" {
+		t.Fatalf("PendingDiff = %v, want \"proposed text\"", tabs[0].PendingDiff)
+	}
+
+	tabs, err = s.AcceptDiff(id, "final text (possibly edited by the user)")
+	if err != nil {
+		t.Fatalf("AcceptDiff: %v", err)
+	}
+	if tabs[0].Text != "final text (possibly edited by the user)" {
+		t.Errorf("Text = %q, want the accepted finalText", tabs[0].Text)
+	}
+	if tabs[0].PendingDiff != nil {
+		t.Errorf("PendingDiff = %v, want nil after Accept", tabs[0].PendingDiff)
+	}
+}
+
+func TestProposeCancelDiffDiscardsProposal(t *testing.T) {
+	s := newTestService(t)
+	id := s.ListTabs()[0].ID
+	original := s.ListTabs()[0].Text
+
+	if _, err := s.ProposeDiff(id, "proposed text"); err != nil {
+		t.Fatalf("ProposeDiff: %v", err)
+	}
+	tabs, err := s.CancelDiff(id)
+	if err != nil {
+		t.Fatalf("CancelDiff: %v", err)
+	}
+	if tabs[0].PendingDiff != nil {
+		t.Errorf("PendingDiff = %v, want nil after Cancel", tabs[0].PendingDiff)
+	}
+	if tabs[0].Text != original {
+		t.Errorf("Text = %q, want unchanged original %q", tabs[0].Text, original)
+	}
+}
+
+func TestCloseTabRemovesFromList(t *testing.T) {
+	s := newTestService(t)
+	id := s.ListTabs()[0].ID
+
+	tabs := s.CloseTab(id)
+	if len(tabs) != 1 {
+		t.Fatalf("len(tabs) = %d, want 1", len(tabs))
+	}
+	if tabs[0].ID == id {
+		t.Error("closed tab is still present")
+	}
+}
+
+func TestLoadLayoutWithNothingSavedReturnsNil(t *testing.T) {
+	s := newTestService(t)
+	got, err := s.LoadLayout()
+	if err != nil {
+		t.Fatalf("LoadLayout: %v", err)
+	}
+	if got != nil {
+		t.Errorf("LoadLayout() = %+v, want nil", got)
+	}
+}
+
+func TestSaveLayoutThenLoadLayoutRoundTrips(t *testing.T) {
 	d, err := test.NewDB()
 	if err != nil {
-		t.Fatalf("test.NewDB: %v", err)
+		t.Fatalf("NewDB: %v", err)
 	}
 	defer d.Close()
+	s := NewService(nil, d, "g1")
+	t.Cleanup(s.Close)
 
-	g := NewGroupFromSettings(app, d, "g-saveas")
-	t.Cleanup(g.Close)
-	tab := NewTab("t1", "untitled", "", "some text")
-	g.AddTab(tab)
-	path := filepath.Join(t.TempDir(), "chapter1.txt")
-
-	if err := g.SaveTabAs(tab, path); err != nil {
-		t.Fatalf("SaveTabAs: %v", err)
+	want := LayoutNode{
+		Axis:        "row",
+		SplitOffset: 0.5,
+		A:           &LayoutNode{Tabs: []LayoutTab{{TabID: "1", FilePath: "/a.md"}}, ActiveTabID: "1"},
+		B:           &LayoutNode{Tabs: []LayoutTab{{TabID: "2", FilePath: "/b.md"}, {TabID: "3"}}, ActiveTabID: "3"},
+	}
+	if err := s.SaveLayout(want); err != nil {
+		t.Fatalf("SaveLayout: %v", err)
 	}
 
-	_, tabs, err := d.LoadEditorLayout("g-saveas")
+	// A fresh Service over the same db (simulating reopening the window)
+	// must see the persisted layout.
+	s2 := NewService(nil, d, "g1")
+	t.Cleanup(s2.Close)
+	got, err := s2.LoadLayout()
 	if err != nil {
-		t.Fatalf("LoadEditorLayout: %v", err)
+		t.Fatalf("LoadLayout: %v", err)
 	}
-	found := false
-	for _, pt := range tabs {
-		if pt.FilePath == path {
-			found = true
-		}
+	if got == nil {
+		t.Fatal("LoadLayout() = nil, want the saved layout")
+	}
+	if got.Axis != "row" || got.A.Tabs[0].TabID != "1" || got.B.ActiveTabID != "3" || got.B.Tabs[1].FilePath != "" {
+		t.Errorf("LoadLayout() = %+v, want %+v", got, want)
+	}
+}
+
+func TestSetFontSettingsPersistsWhenEditorsNodeExists(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+	if err := RegisterSettings(d, "g1"); err != nil {
+		t.Fatalf("RegisterSettings: %v", err)
+	}
+	s := NewService(nil, d, "g1")
+	t.Cleanup(s.Close)
+
+	if err := s.SetFontSettings(fontsettings.FontSettings{Family: "", Size: 22, LineHeight: 1.3, ColumnWidth: 1.0}); err != nil {
+		t.Fatalf("SetFontSettings: %v", err)
+	}
+	if got := s.CurrentFontSettings().Size; got != 22 {
+		t.Errorf("CurrentFontSettings().Size = %d, want 22", got)
+	}
+
+	_, _, found, err := readEditorSettings(d, "g1")
+	if err != nil {
+		t.Fatalf("readEditorSettings: %v", err)
 	}
 	if !found {
-		t.Errorf("persisted layout does not contain the new FilePath %q after SaveTabAs: %+v", path, tabs)
-	}
-}
-
-func TestRequestSaveAsCallsOnSaveAsRequestedHandler(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-
-	tab := NewTab("t1", "untitled", "", "some text")
-	var got *Tab
-	g.OnSaveAsRequested = func(tab *Tab) { got = tab }
-
-	g.requestSaveAs(tab)
-
-	if got != tab {
-		t.Errorf("OnSaveAsRequested was not called with the expected tab")
-	}
-}
-
-func TestRequestSaveAsNilHandlerDoesNotPanic(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-
-	tab := NewTab("t1", "untitled", "", "some text")
-	g.requestSaveAs(tab) // OnSaveAsRequested is nil — must not panic
-}
-
-func TestProposeDiffSwitchesActivePaneIntoDiffReview(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "old text")
-
-	if err := g.ProposeDiff(path, "new text"); err != nil {
-		t.Fatalf("ProposeDiff: %v", err)
-	}
-
-	if g.primary.southBar.Mode() != SouthBarDiffReview {
-		t.Fatalf("southBar.Mode() = %v, want SouthBarDiffReview", g.primary.southBar.Mode())
-	}
-	if g.primary.active.pendingDiff == nil {
-		t.Fatalf("active tab has no pendingDiff after ProposeDiff")
-	}
-	if g.primary.active.pendingDiff.newText != "new text" {
-		t.Errorf("pendingDiff.newText = %q, want %q", g.primary.active.pendingDiff.newText, "new text")
-	}
-	// Document itself must stay untouched until Accept.
-	if g.primary.active.Doc.Text() != "old text" {
-		t.Errorf("Doc.Text() = %q, want unchanged %q before Accept", g.primary.active.Doc.Text(), "old text")
-	}
-}
-
-func TestAcceptDiffAppliesTextAndWritesToDisk(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "old text")
-
-	if err := g.ProposeDiff(path, "new text"); err != nil {
-		t.Fatalf("ProposeDiff: %v", err)
-	}
-	tab := g.primary.active
-
-	// Stop the real file watcher before Accept writes to path below — a
-	// genuine fsnotify event racing with this test's own goroutine is a
-	// real, observed concurrent-widget-mutation crash in Fyne's test
-	// driver (see watch_test.go's package doc comment for the full
-	// explanation); the watcher isn't needed for Accept's own logic.
-	g.Close()
-
-	g.acceptDiff(tab)
-
-	if tab.Doc.Text() != "new text" {
-		t.Errorf("Doc.Text() = %q, want %q", tab.Doc.Text(), "new text")
-	}
-	if tab.Dirty() {
-		t.Errorf("Dirty() = true after a successful Accept, want false — the write to disk succeeded")
-	}
-	if tab.pendingDiff != nil {
-		t.Errorf("pendingDiff is non-nil after Accept, want nil")
-	}
-	if g.primary.southBar.Mode() != SouthBarHidden {
-		t.Errorf("southBar.Mode() = %v, want SouthBarHidden after Accept", g.primary.southBar.Mode())
-	}
-	onDisk, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read back %s: %v", path, err)
-	}
-	if string(onDisk) != "new text" {
-		t.Errorf("file on disk = %q, want %q", string(onDisk), "new text")
-	}
-}
-
-func TestCancelDiffLeavesDocumentAndDiskUntouched(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "old text")
-
-	if err := g.ProposeDiff(path, "new text"); err != nil {
-		t.Fatalf("ProposeDiff: %v", err)
-	}
-	tab := g.primary.active
-
-	g.cancelDiff(tab)
-
-	if tab.Doc.Text() != "old text" {
-		t.Errorf("Doc.Text() = %q, want unchanged %q after Cancel", tab.Doc.Text(), "old text")
-	}
-	if tab.pendingDiff != nil {
-		t.Errorf("pendingDiff is non-nil after Cancel, want nil")
-	}
-	if g.primary.southBar.Mode() != SouthBarHidden {
-		t.Errorf("southBar.Mode() = %v, want SouthBarHidden after Cancel", g.primary.southBar.Mode())
-	}
-	onDisk, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read back %s: %v", path, err)
-	}
-	if string(onDisk) != "old text" {
-		t.Errorf("file on disk = %q, want unchanged %q", string(onDisk), "old text")
-	}
-}
-
-func TestProposeDiffOnAlreadyOpenTabReusesIt(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "original")
-
-	opened, err := g.OpenFile(path)
-	if err != nil {
-		t.Fatalf("OpenFile: %v", err)
-	}
-	if err := g.ProposeDiff(path, "proposed"); err != nil {
-		t.Fatalf("ProposeDiff: %v", err)
-	}
-
-	if g.primary.active != opened {
-		t.Errorf("ProposeDiff opened a second tab instead of reusing the already-open one")
-	}
-	if len(g.primary.tabs) != 1 {
-		t.Errorf("primary pane has %d tabs, want 1", len(g.primary.tabs))
-	}
-}
-
-// TestProposeDiffOnAlreadyOpenButNotActiveTabActivatesAndShowsDiff is a
-// regression test for a real reported bug: with several tabs open,
-// proposing a diff against a file that's already open but NOT the
-// currently-active tab in its Pane silently did nothing — OpenFile
-// happily returned the existing Tab, pendingDiff got set on it, but no
-// Pane's active tab matched it (walkPanes' "p.active == tab" check), so
-// showDiffReview never ran anywhere and the diff never appeared.
-// ProposeDiff must activate the Tab first if it isn't already, in every
-// Pane that holds it, so the diff is guaranteed to show up somewhere.
-func TestProposeDiffOnAlreadyOpenButNotActiveTabActivatesAndShowsDiff(t *testing.T) {
-	app := fynetest.NewApp()
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	path := writeTempFile(t, "chapter1.txt", "old text")
-
-	target, err := g.OpenFile(path)
-	if err != nil {
-		t.Fatalf("OpenFile: %v", err)
-	}
-	// Open and switch to a second, unrelated tab — target is now open but
-	// no longer the active tab of the primary pane.
-	other := NewTab("other", "other.txt", "", "other content")
-	g.AddTab(other)
-	if g.primary.active != other {
-		t.Fatalf("precondition: expected 'other' to be the active tab, got %v", g.primary.active)
-	}
-
-	if err := g.ProposeDiff(path, "new text"); err != nil {
-		t.Fatalf("ProposeDiff: %v", err)
-	}
-
-	if g.primary.active != target {
-		t.Fatalf("ProposeDiff did not activate the target tab: active = %v, want the tab for %s", g.primary.active, path)
-	}
-	if g.primary.southBar.Mode() != SouthBarDiffReview {
-		t.Fatalf("southBar.Mode() = %v, want SouthBarDiffReview — the diff never actually showed", g.primary.southBar.Mode())
-	}
-	if target.pendingDiff == nil || target.pendingDiff.newText != "new text" {
-		t.Errorf("target.pendingDiff = %+v, want newText %q", target.pendingDiff, "new text")
+		t.Fatal("Editors node not found after SetFontSettings")
 	}
 }

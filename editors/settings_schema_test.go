@@ -3,8 +3,6 @@ package editors
 import (
 	"testing"
 
-	fynetest "fyne.io/fyne/v2/test"
-
 	"go-ux/fontsettings"
 	"go-ux/test"
 )
@@ -80,8 +78,7 @@ func TestReadEditorSettingsNotFoundWhenNeverRegistered(t *testing.T) {
 	}
 }
 
-func TestApplyEditorSettingsPushesFontIntoLiveGroup(t *testing.T) {
-	app := fynetest.NewApp()
+func TestApplyEditorSettingsPushesFontIntoLiveService(t *testing.T) {
 	d, err := test.NewDB()
 	if err != nil {
 		t.Fatalf("test.NewDB: %v", err)
@@ -97,25 +94,24 @@ func TestApplyEditorSettingsPushesFontIntoLiveGroup(t *testing.T) {
 		t.Fatalf("SaveProperties: %v", err)
 	}
 
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
+	s := NewService(nil, d, "g1")
+	t.Cleanup(s.Close)
 
-	if err := ApplyEditorSettings(d, "g1", g); err != nil {
+	if err := ApplyEditorSettings(d, "g1", s); err != nil {
 		t.Fatalf("ApplyEditorSettings: %v", err)
 	}
 
-	if got := g.fonts.Current().Size; got != 24 {
-		t.Errorf("fonts.Current().Size = %d, want 24", got)
+	if got := s.CurrentFontSettings().Size; got != 24 {
+		t.Errorf("CurrentFontSettings().Size = %d, want 24", got)
 	}
 }
 
 // TestApplyEditorSettingsUpdatesFileWatchModeLive is a regression test:
 // ApplyEditorSettings previously only pushed the font value into a live
-// Group, leaving fileWatchMode frozen at whatever NewGroupFromSettings
-// read once at construction — so changing the setting later (e.g. via a
-// settings window) had no effect until the app restarted.
+// Group/Service, leaving fileWatchMode frozen at whatever construction
+// time read once — so changing the setting later (e.g. via a settings
+// window) had no effect until the app restarted.
 func TestApplyEditorSettingsUpdatesFileWatchModeLive(t *testing.T) {
-	app := fynetest.NewApp()
 	d, err := test.NewDB()
 	if err != nil {
 		t.Fatalf("test.NewDB: %v", err)
@@ -126,10 +122,10 @@ func TestApplyEditorSettingsUpdatesFileWatchModeLive(t *testing.T) {
 		t.Fatalf("RegisterSettings: %v", err)
 	}
 
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	if g.fileWatchMode != FileWatchModeNotify {
-		t.Fatalf("precondition: fileWatchMode = %q, want %q", g.fileWatchMode, FileWatchModeNotify)
+	s := NewService(nil, d, "g1")
+	t.Cleanup(s.Close)
+	if s.fileWatchMode != FileWatchModeNotify {
+		t.Fatalf("precondition: fileWatchMode = %q, want %q", s.fileWatchMode, FileWatchModeNotify)
 	}
 
 	nodes, _ := d.ListSettings()
@@ -138,36 +134,35 @@ func TestApplyEditorSettingsUpdatesFileWatchModeLive(t *testing.T) {
 		t.Fatalf("SaveProperties: %v", err)
 	}
 
-	if err := ApplyEditorSettings(d, "g1", g); err != nil {
+	if err := ApplyEditorSettings(d, "g1", s); err != nil {
 		t.Fatalf("ApplyEditorSettings: %v", err)
 	}
 
-	if g.fileWatchMode != FileWatchModeAuto {
-		t.Errorf("fileWatchMode = %q after ApplyEditorSettings, want %q", g.fileWatchMode, FileWatchModeAuto)
+	if s.fileWatchMode != FileWatchModeAuto {
+		t.Errorf("fileWatchMode = %q after ApplyEditorSettings, want %q", s.fileWatchMode, FileWatchModeAuto)
 	}
 }
 
 func TestApplyEditorSettingsNoOpWhenNeverRegistered(t *testing.T) {
-	app := fynetest.NewApp()
 	d, err := test.NewDB()
 	if err != nil {
 		t.Fatalf("test.NewDB: %v", err)
 	}
 	defer d.Close()
 
-	g := NewGroup(app)
-	t.Cleanup(g.Close)
-	before := g.fonts.Current()
-	beforeMode := g.fileWatchMode
+	s := NewService(nil, d, "never-registered")
+	t.Cleanup(s.Close)
+	before := s.CurrentFontSettings()
+	beforeMode := s.fileWatchMode
 
-	if err := ApplyEditorSettings(d, "never-registered", g); err != nil {
+	if err := ApplyEditorSettings(d, "never-registered", s); err != nil {
 		t.Fatalf("ApplyEditorSettings: %v", err)
 	}
 
-	if g.fonts.Current() != before {
-		t.Errorf("fonts changed despite no registered settings: %+v -> %+v", before, g.fonts.Current())
+	if s.CurrentFontSettings() != before {
+		t.Errorf("fonts changed despite no registered settings: %+v -> %+v", before, s.CurrentFontSettings())
 	}
-	if g.fileWatchMode != beforeMode {
-		t.Errorf("fileWatchMode changed despite no registered settings: %q -> %q", beforeMode, g.fileWatchMode)
+	if s.fileWatchMode != beforeMode {
+		t.Errorf("fileWatchMode changed despite no registered settings: %q -> %q", beforeMode, s.fileWatchMode)
 	}
 }

@@ -1,0 +1,320 @@
+:root {
+    color-scheme: dark;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+html, body, #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #1e1e1e;
+    color: #e6e6e6;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.btn {
+    height: 32px;
+    padding: 0 14px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #2b2d30;
+    color: #e6e6e6;
+    cursor: pointer;
+}
+
+.btn:hover {
+    background: #3a3d41;
+}
+
+.btn-primary {
+    background: #3574f0;
+    border-color: #3574f0;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2f65d0;
+}
+
+.input {
+    height: 32px;
+    border-radius: 4px;
+    border: 1px solid #444;
+    background: #2b2d30;
+    color: #e6e6e6;
+    padding: 0 8px;
+}
+
+.divider {
+    border: none;
+    border-top: 1px solid #333;
+    margin: 20px 0;
+}
+
+.count {
+    font-size: 12px;
+    color: #9a9a9a;
+}
+
+/* --- Hub --- */
+
+.hub {
+    max-width: 420px;
+    margin: 32px auto;
+    padding: 0 24px;
+}
+
+.hub h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+}
+
+.hub .sub {
+    color: #9a9a9a;
+    font-size: 13px;
+    margin: 0 0 20px;
+}
+
+.hub-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* --- Terminal --- */
+
+.terminal-container {
+    width: 100%;
+    height: 100%;
+    padding: 8px;
+    box-sizing: border-box;
+}
+
+/* --- Settings --- */
+
+.settings {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+.settings-tree {
+    width: 180px;
+    border-right: 1px solid #333;
+    padding: 12px 0;
+    flex-shrink: 0;
+}
+
+.tree-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.tree-item:hover {
+    background: #2b2d30;
+}
+
+.tree-item.active {
+    background: #3574f0;
+    color: white;
+}
+
+.settings-form {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.settings-form h2 {
+    margin: 0 0 16px;
+    font-size: 16px;
+}
+
+.prop-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.prop-row label {
+    font-size: 13px;
+    color: #cfcfcf;
+}
+
+/* --- Editor --- */
+
+.editor-view {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.pane-tab-strip {
+    display: flex;
+    gap: 2px;
+    padding: 6px 6px 0;
+    background: #202020;
+    flex-shrink: 0;
+}
+
+.tab-chip {
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 4px 4px 0 0;
+    background: #2b2d30;
+    cursor: pointer;
+}
+
+.tab-chip.active {
+    background: #1e1e1e;
+    border-bottom: 2px solid #3574f0;
+}
+
+.cm-panes {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* .cm-panes holds exactly one child: either a bare .cm-pane-wrapper (no
+   split yet) or a .cm-split tree matching the TreeNode shape built by
+   rebuildDOM — nested .cm-split containers recurse arbitrarily (though
+   this app's own canSplit caps real usage at one level), each dividing
+   its two children evenly along its own axis. */
+.cm-split {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    gap: 2px;
+}
+
+.cm-split-row {
+    flex-direction: row;
+}
+
+.cm-split-column {
+    flex-direction: column;
+}
+
+.cm-split > * {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+}
+
+.context-menu {
+    position: fixed;
+    z-index: 1000;
+    background: #2b2d30;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 4px 0;
+    min-width: 180px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.context-menu-item {
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.context-menu-item:hover {
+    background: #3574f0;
+}
+
+.context-menu-item.disabled {
+    color: #6a6a6a;
+    cursor: default;
+}
+
+.context-menu-item.disabled:hover {
+    background: none;
+}
+
+.context-menu-divider {
+    border-top: 1px solid #444;
+    margin: 4px 0;
+}
+
+/* Each split pane is a full North(tab bar)/Center(content) unit — the
+   direct analogue of go-ux/editors.Pane, which is why every pane gets
+   its own tab strip instead of one shared across the whole editor. */
+.cm-pane-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    border: 1px solid #333;
+}
+
+.cm-pane-content {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+}
+
+.cm-pane-content .cm-editor {
+    height: 100%;
+}
+
+.cm-pane-content .cm-scroller {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+}
+
+/* @codemirror/merge's baseTheme only backgrounds .cm-changedLine under a
+   "&.cm-merge-a" selector, which is the two-pane MergeView's class — the
+   single-editor unifiedMergeView we use never gets that class, so those
+   rules silently never match and only the (unrelated) gutter marker shows.
+   These rules target the same classes directly, scoped to our own pane. */
+.cm-pane-content .cm-changedLine {
+    background-color: rgba(255, 179, 71, 0.16);
+}
+
+.cm-pane-content .cm-deletedChunk {
+    background-color: rgba(255, 85, 85, 0.14);
+}
+
+.cm-pane-content .cm-insertedLine {
+    background-color: rgba(88, 214, 141, 0.2);
+}
+
+.cm-pane-content .cm-changedText {
+    background-color: rgba(255, 205, 86, 0.4);
+}
+
+.cm-pane-content .cm-deletedChunk .cm-deletedText {
+    background-color: rgba(255, 85, 85, 0.4);
+    text-decoration: line-through;
+}
+
+.empty-pane {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #6a6a6a;
+    font-size: 13px;
+}
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border-top: 1px solid #333;
+    flex-shrink: 0;
+}

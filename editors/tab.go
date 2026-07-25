@@ -11,11 +11,15 @@ type Tab struct {
 	FilePath string
 	Doc      *Document
 
-	// pendingDiff is non-nil while an mcp_tooling-proposed diff (see
-	// diff.go/mcptooling.go) is awaiting Accept/Cancel. Unexported — a host
-	// app drives this only through Group.ProposeDiff and the south bar's
-	// Accept/Cancel buttons, never by touching Tab directly.
-	pendingDiff *pendingDiff
+	// pendingDiff is non-nil (the proposed new text) while an
+	// mcp_tooling-proposed diff (see mcptooling.go) is awaiting
+	// Accept/Cancel. Unexported — a host app drives this only through
+	// Service.ProposeDiff/AcceptDiff/CancelDiff, never by touching Tab
+	// directly. The frontend renders the actual diff view itself (via
+	// @codemirror/merge, comparing this against the Tab's current text) —
+	// unlike the old Fyne version, this package no longer computes or
+	// renders a diff at all, just holds the proposed text.
+	pendingDiff *string
 }
 
 // Text returns the Tab's current content, delegating to its Document.

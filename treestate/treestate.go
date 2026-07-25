@@ -1,8 +1,18 @@
-// Package treestate persists a *widget.Tree's expand/collapse state and
-// selected node, live, reusable across any tree-based UI backed by a
-// go-ux/db.DB. It is the Fyne-widget-wiring layer on top of db's already-
+// Package treestate persists a tree UI's expand/collapse state and
+// selected node, live, reusable across any tree-based component backed by
+// a go-ux/db.DB. It is the persistence-wiring layer on top of db's already-
 // generic UI-state blob store (db.SaveUIState/LoadUIState); db itself
-// gains no new API and stays free of any Fyne dependency.
+// gains no new API and stays free of any UI-toolkit dependency.
+//
+// Unlike the original Fyne version (which took over a live *widget.Tree's
+// callback fields), a Wails tree lives entirely in the frontend — there is
+// no live Go-side widget to hang callbacks off. Tracker is instead a plain
+// request/response state store: the frontend calls SetExpanded/SetSelected
+// on every toggle/selection, and reads Expanded/Selected back (typically
+// once, when a tree first mounts) to replay the persisted state itself.
+// Filtering out UIDs that no longer exist in the tree's current data is
+// the caller's responsibility (e.g. go-ux/settings.Service, which already
+// has the current node list) — Tracker has no notion of tree shape.
 package treestate
 
 import (
@@ -10,41 +20,21 @@ import (
 	"log"
 	"sync"
 
-	"fyne.io/fyne/v2/widget"
-
 	"go-ux/db"
 )
 
-// Options configures Track.
-type Options struct {
-	// Exists reports whether uid is still valid in the tree's current
-	// data. Required — Restore uses it to filter stale persisted
-	// references (a node that existed in a previous session but was since
-	// removed) out of the branches it opens and the node it selects.
-	Exists func(uid string) bool
-
-	// OnSelected/OnBranchOpened/OnBranchClosed are optional pass-throughs:
-	// Track takes over the tree's corresponding callback field, persists
-	// first, then calls these (if non-nil) so the caller's own reaction
-	// (e.g. rendering a properties pane) still runs — including during
-	// Restore's replay, so a caller like settings.Window still renders
-	// the restored selection's properties page.
-	OnSelected     func(uid string)
-	OnBranchOpened func(uid string)
-	OnBranchClosed func(uid string)
-}
-
-// Tracker is the handle Track returns.
+// Tracker is a database-backed store for one tree instance's expand/
+// collapse state and selection, keyed by id (caller-chosen, unique per
+// tree instance — e.g. "settings.tree"). Every SetExpanded/SetSelected
+// call writes the entire current state immediately — no explicit Save
+// call, no debounce.
 type Tracker struct {
 	database *db.DB
 	id       string
-	tree     *widget.Tree
-	opts     Options
 
-	mu        sync.Mutex
-	expanded  map[string]bool
-	selected  string
-	restoring bool
+	mu       sync.Mutex
+	expanded map[string]bool
+	selected string
 }
 
 // state is the persisted shape, marshaled as JSON into the db's opaque
@@ -54,77 +44,56 @@ type state struct {
 	Selected string
 }
 
-// Track wires database-backed persistence for tree's expand/collapse state
-// and selection, keyed by id (caller-chosen, unique per tree instance —
-// e.g. "settings.tree"). It takes over tree.OnSelected/OnBranchOpened/
-// OnBranchClosed. Every toggle/selection writes the entire current state
-// to database immediately — no explicit Save call, no debounce.
-//
-// Call Track once, after tree's data-provider callbacks are set but
-// before it's shown; call the returned Tracker's Restore once the tree is
-// attached to its window/container.
-func Track(database *db.DB, id string, tree *widget.Tree, opts Options) *Tracker {
-	if opts.Exists == nil {
-		// Exists is documented as required, but a nil check here turns a
-		// caller's mistake into "treat every persisted UID as valid"
-		// (Restore's stale-skip simply never triggers) instead of a
-		// nil-pointer panic the first time Restore runs — friendlier for a
-		// second, unfamiliar consumer of this package than a crash deep
-		// inside Restore's replay loop.
-		opts.Exists = func(string) bool { return true }
-	}
-	t := &Tracker{
-		database: database,
-		id:       id,
-		tree:     tree,
-		opts:     opts,
-		expanded: make(map[string]bool),
-	}
-
-	tree.OnBranchOpened = func(uid widget.TreeNodeID) {
-		t.mu.Lock()
-		t.expanded[uid] = true
-		restoring := t.restoring
-		t.mu.Unlock()
-		if !restoring {
-			t.save()
-		}
-		if opts.OnBranchOpened != nil {
-			opts.OnBranchOpened(uid)
-		}
-	}
-	tree.OnBranchClosed = func(uid widget.TreeNodeID) {
-		t.mu.Lock()
-		delete(t.expanded, uid)
-		restoring := t.restoring
-		t.mu.Unlock()
-		if !restoring {
-			t.save()
-		}
-		if opts.OnBranchClosed != nil {
-			opts.OnBranchClosed(uid)
-		}
-	}
-	tree.OnSelected = func(uid widget.TreeNodeID) {
-		t.mu.Lock()
-		t.selected = uid
-		restoring := t.restoring
-		t.mu.Unlock()
-		if !restoring {
-			t.save()
-		}
-		if opts.OnSelected != nil {
-			opts.OnSelected(uid)
-		}
-	}
-
+// New returns a Tracker for id, loading any previously persisted state.
+func New(database *db.DB, id string) *Tracker {
+	t := &Tracker{database: database, id: id, expanded: make(map[string]bool)}
+	t.load()
 	return t
+}
+
+// Expanded returns every currently expanded node UID, in no particular
+// order.
+func (t *Tracker) Expanded() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]string, 0, len(t.expanded))
+	for uid := range t.expanded {
+		out = append(out, uid)
+	}
+	return out
+}
+
+// Selected returns the currently selected node UID, or "" if none.
+func (t *Tracker) Selected() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.selected
+}
+
+// SetExpanded records uid's expand/collapse state and persists it.
+func (t *Tracker) SetExpanded(uid string, expanded bool) {
+	t.mu.Lock()
+	if expanded {
+		t.expanded[uid] = true
+	} else {
+		delete(t.expanded, uid)
+	}
+	t.mu.Unlock()
+	t.save()
+}
+
+// SetSelected records the selected node and persists it.
+func (t *Tracker) SetSelected(uid string) {
+	t.mu.Lock()
+	t.selected = uid
+	t.mu.Unlock()
+	t.save()
 }
 
 // save writes the tracker's current in-memory state to database under id.
 // Errors are logged and swallowed — a UI-state persistence failure must
-// never block the tree from working, matching settings.saveUIState's
-// existing error-handling convention.
+// never block the tree from working, matching this package's original
+// error-handling convention.
 func (t *Tracker) save() {
 	t.mu.Lock()
 	expanded := make([]string, 0, len(t.expanded))
@@ -144,16 +113,10 @@ func (t *Tracker) save() {
 	}
 }
 
-// Restore loads the persisted state (if any) and opens every persisted
-// branch / selects the persisted node, each filtered through
-// Options.Exists — a stale UID is silently skipped, with no fallback
-// selection. Call once, after tree is populated and visible.
-//
-// The replay (OpenBranch/Select) does not itself trigger another persist
-// — restoring is held true for its duration, checked by the wrapped
-// callbacks above, so this is idempotent to call against an unmodified
-// tree.
-func (t *Tracker) Restore() {
+// load reads any previously persisted state into memory. Errors are
+// logged and swallowed, leaving the Tracker at its zero state — matching
+// save's own best-effort persistence convention.
+func (t *Tracker) load() {
 	blob, err := t.database.LoadUIState(t.id)
 	if err != nil {
 		log.Printf("treestate: load state: %v", err)
@@ -170,20 +133,9 @@ func (t *Tracker) Restore() {
 	}
 
 	t.mu.Lock()
-	t.restoring = true
-	t.mu.Unlock()
-	defer func() {
-		t.mu.Lock()
-		t.restoring = false
-		t.mu.Unlock()
-	}()
-
+	defer t.mu.Unlock()
 	for _, uid := range s.Expanded {
-		if t.opts.Exists(uid) {
-			t.tree.OpenBranch(uid)
-		}
+		t.expanded[uid] = true
 	}
-	if s.Selected != "" && t.opts.Exists(s.Selected) {
-		t.tree.Select(s.Selected)
-	}
+	t.selected = s.Selected
 }

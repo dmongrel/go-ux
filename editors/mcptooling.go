@@ -1,192 +1,433 @@
 package editors
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"go-ux/db"
+	"go-ux/fontsettings"
 )
 
-// OpenFile is the host app's "sidebar click-to-open" entry point (and the
-// first half of ProposeDiff, below): if path is already open somewhere in
-// this Group (any Pane, matched by Tab.FilePath), returns that existing
-// Tab rather than opening a duplicate; otherwise reads path from disk and
-// opens it as a new Tab in the primary Pane (same destination AddTab
-// itself uses).
-//
-// This is where file I/O first enters the editors package — every prior
-// phase seeded Tab text purely in memory.
-func (g *Group) OpenFile(path string) (*Tab, error) {
-	if tab, ok := g.findTabByPath(path); ok {
-		return tab, nil
+func init() {
+	application.RegisterEvent[string]("editors:filechanged")
+	application.RegisterEvent[fontsettings.FontSettings]("editors:font")
+}
+
+// TabInfo is the wire representation of a Tab — Tab/Document's fields are
+// unexported (see document.go/tab.go — a *Document would otherwise
+// marshal as "{}"), so every Service method returns this flattened,
+// JSON-serializable snapshot instead.
+type TabInfo struct {
+	ID          string
+	Title       string
+	FilePath    string
+	Text        string
+	Dirty       bool
+	PendingDiff *string
+}
+
+func tabInfo(t *Tab) TabInfo {
+	return TabInfo{
+		ID:          t.ID,
+		Title:       t.Title,
+		FilePath:    t.FilePath,
+		Text:        t.Text(),
+		Dirty:       t.Dirty(),
+		PendingDiff: t.pendingDiff,
+	}
+}
+
+// Service is the Wails-bound replacement for go-ux/editors.Group: an
+// in-memory list of open Tabs (Document/Tab reused verbatim from
+// document.go/tab.go), real file I/O (OpenFile/SaveTab, ported from the
+// original mcptooling.go), file watching (watch.go), and per-instance
+// Ctrl+scroll font sizing (go-ux/fontsettings) — the same feature set as
+// the old Group, minus pane/split-tree management, which now lives
+// entirely in the frontend (frontend/src/views/editor.ts, ported from
+// terminal-poc and already generalized beyond the original Fyne
+// split.go's algorithm) — there is no Go-side notion of a Pane anymore.
+type Service struct {
+	app     *application.App
+	db      *db.DB
+	groupID string
+	fonts   *fontsettings.State
+
+	fileWatchMode string
+	watcher       *fsnotify.Watcher
+	watchedFiles  map[string]bool
+
+	mu     sync.Mutex
+	tabs   []*Tab
+	nextID int
+}
+
+// NewService builds an editors Service backed by database, scoped to
+// groupID (matches go-ux/editors.NewGroupFromSettings' groupID scoping —
+// font size and file-watch mode are independent per instance). Seeds two
+// in-memory placeholder tabs, matching terminal-poc's original demo
+// content, so the demo has something to show without requiring a real
+// file to open first.
+func NewService(app *application.App, database *db.DB, groupID string) *Service {
+	s := &Service{
+		app:           app,
+		db:            database,
+		groupID:       groupID,
+		fonts:         fontsettings.NewState(fontsettings.DefaultFontSettings),
+		fileWatchMode: FileWatchModeNotify,
+		watchedFiles:  make(map[string]bool),
+	}
+
+	if err := ApplyEditorSettings(database, groupID, s); err != nil {
+		log.Printf("editors: read settings: %v", err)
+	}
+
+	s.addTab(NewTab(s.newTabID(), "Chapter One", "", "# Chapter One\n\nIt was a dark and stormy night...\n"))
+	s.addTab(NewTab(s.newTabID(), "Notes", "", "- idea one\n- idea two\n"))
+
+	return s
+}
+
+func (s *Service) newTabID() string {
+	s.nextID++
+	return strconv.Itoa(s.nextID)
+}
+
+func (s *Service) addTab(t *Tab) {
+	s.mu.Lock()
+	s.tabs = append(s.tabs, t)
+	s.mu.Unlock()
+}
+
+func (s *Service) findTabByID(id string) (*Tab, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tabs {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return nil, false
+}
+
+func (s *Service) findTabByPath(path string) (*Tab, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tabs {
+		if t.FilePath == path {
+			return t, true
+		}
+	}
+	return nil, false
+}
+
+// listInfo snapshots every open tab, in order.
+func (s *Service) listInfo() []TabInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]TabInfo, len(s.tabs))
+	for i, t := range s.tabs {
+		out[i] = tabInfo(t)
+	}
+	return out
+}
+
+// ListTabs returns every open tab and its current state.
+func (s *Service) ListTabs() []TabInfo {
+	return s.listInfo()
+}
+
+// NewTab creates a blank in-memory tab and returns the updated list.
+func (s *Service) NewTab() []TabInfo {
+	s.addTab(NewTab(s.newTabID(), "Untitled", "", ""))
+	return s.listInfo()
+}
+
+// SaveTab updates tab id's text. If the tab has a FilePath (opened via
+// OpenFile, or previously SaveTabAs), also writes it to disk and marks it
+// clean — the plain Ctrl+S path. A tab with no FilePath (e.g. one of the
+// demo placeholders, or a NewTab that was never Saved As) just updates its
+// in-memory Document; there is nothing to write to and this is not an
+// error, unlike the original Fyne Group.SaveTab (which required a
+// FilePath) — this Service's own OpenWindow demo seeds memory-only tabs a
+// user should still be able to "Save" without first choosing a path.
+func (s *Service) SaveTab(id string, text string) ([]TabInfo, error) {
+	tab, ok := s.findTabByID(id)
+	if !ok {
+		return nil, errUnknownTab
+	}
+	tab.Doc.SetText(text)
+	if tab.FilePath != "" {
+		if err := os.WriteFile(tab.FilePath, []byte(text), 0o644); err != nil {
+			return nil, err
+		}
+		tab.Doc.MarkClean()
+	}
+	return s.listInfo(), nil
+}
+
+// OpenFile is the host app's "sidebar click-to-open" entry point: if path
+// is already open (matched by FilePath), returns the existing tab list
+// unchanged; otherwise reads path from disk, opens it as a new tab, and
+// starts watching it (watch.go).
+func (s *Service) OpenFile(path string) ([]TabInfo, error) {
+	if _, ok := s.findTabByPath(path); ok {
+		return s.listInfo(), nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	tab := NewTab(path, filepath.Base(path), path, string(data))
-	g.AddTab(tab)
-	return tab, nil
+	tab := NewTab(s.newTabID(), filepath.Base(path), path, string(data))
+	s.addTab(tab)
+	s.startWatching(tab)
+	return s.listInfo(), nil
 }
 
-// SaveTab writes tab's current Document text to tab.FilePath, marking it
-// clean on success. This is the plain, non-diff-review "just save my
-// edit" path (Ctrl+S — see font.go's editorEntry.TypedShortcut) — until
-// now the only way to persist an edited Tab's content to disk at all was
-// via a host-tooling-proposed ProposeDiff/Accept, which is the wrong
-// entry point for a normal user edit. Returns an error if tab has no
-// FilePath (nothing to save to — e.g. a Tab that was never opened from,
-// or associated with, a real file).
-func (g *Group) SaveTab(tab *Tab) error {
-	if tab.FilePath == "" {
-		return errors.New("editors: tab has no FilePath to save to")
-	}
-	if err := os.WriteFile(tab.FilePath, []byte(tab.Doc.Text()), 0o644); err != nil {
-		return err
-	}
-	tab.Doc.MarkClean()
-	return nil
-}
-
-// SaveTabAs is the host app's entry point for completing a "Save As": call
-// it with the path the host's own file-save dialog returned (see
-// OnSaveAsRequested, on Group) after Ctrl+S on a tab with no FilePath.
-// Sets tab.FilePath and Title (to path's base name), writes the current
-// Document text there, marks the Document clean, refreshes every tab bar
-// showing tab, and persists the layout (FilePath is part of the persisted
-// db.EditorTab row, unlike SaveTab's plain overwrite, which never changes
-// FilePath and so never needs to touch the layout).
-func (g *Group) SaveTabAs(tab *Tab, path string) error {
+// SaveTabAs writes tab id's current text to path, adopts path as its
+// FilePath/Title, marks it clean, and starts watching path.
+func (s *Service) SaveTabAs(id string, path string) ([]TabInfo, error) {
 	if path == "" {
-		return errors.New("editors: SaveTabAs called with an empty path")
+		return nil, errors.New("editors: SaveTabAs called with an empty path")
+	}
+	tab, ok := s.findTabByID(id)
+	if !ok {
+		return nil, errUnknownTab
 	}
 	if err := os.WriteFile(path, []byte(tab.Doc.Text()), 0o644); err != nil {
-		return err
+		return nil, err
 	}
 	tab.FilePath = path
 	tab.Title = filepath.Base(path)
 	tab.Doc.MarkClean()
-	walkPanes(g.root, func(p *Pane) {
-		if p.hasTab(tab) {
-			p.tabBar.Refresh()
-		}
-	})
-	g.notifyChanged()
-	return nil
+	s.startWatching(tab)
+	return s.listInfo(), nil
 }
 
-// requestSaveAs is Ctrl+S's fallback when tab has no FilePath: this
-// package leaves file-picker UI to the host app (see OpenFile's doc
-// comment on the same "host supplies the picker" pattern), so it can't
-// show a "Save As" dialog itself — it calls OnSaveAsRequested, if the
-// host set one, so the host can show its own save dialog and call
-// SaveTabAs with the chosen path. A no-op if the host never set a
-// handler.
-func (g *Group) requestSaveAs(tab *Tab) {
-	if g.OnSaveAsRequested != nil {
-		g.OnSaveAsRequested(tab)
+// ProposeDiff sets id's pending diff to newText — mirrors the original
+// Group.ProposeDiff, minus the pane-activation half (the frontend's own
+// refreshPanesShowingTab, editor.ts, handles making the diff visible
+// wherever the tab is shown; there is no Go-side Pane to activate). The
+// frontend switches that tab into a @codemirror/merge unifiedMergeView
+// comparing Text (old) against PendingDiff (new) — this package computes
+// and renders no diff itself.
+func (s *Service) ProposeDiff(id string, newText string) ([]TabInfo, error) {
+	tab, ok := s.findTabByID(id)
+	if !ok {
+		return nil, errUnknownTab
 	}
+	tab.pendingDiff = &newText
+	return s.listInfo(), nil
 }
 
-// findTabByPath searches every Pane's tabs for one whose FilePath matches
-// path.
-func (g *Group) findTabByPath(path string) (*Tab, bool) {
-	var found *Tab
-	walkPanes(g.root, func(p *Pane) {
-		if found != nil {
-			return
+// AcceptDiff commits finalText as tab id's real content — writing it to
+// disk if the tab has a FilePath — and clears the pending diff. finalText
+// comes from the frontend's merge-view editor state at the moment Accept
+// is clicked, not blindly the originally proposed text, so any per-chunk
+// accept/reject the user did inside CodeMirror's own merge-view controls
+// is respected (mirrors the original Group.acceptDiff).
+func (s *Service) AcceptDiff(id string, finalText string) ([]TabInfo, error) {
+	tab, ok := s.findTabByID(id)
+	if !ok {
+		return nil, errUnknownTab
+	}
+	tab.Doc.SetText(finalText)
+	if tab.FilePath != "" {
+		if err := os.WriteFile(tab.FilePath, []byte(finalText), 0o644); err != nil {
+			log.Printf("editors: write %s: %v", tab.FilePath, err)
+		} else {
+			tab.Doc.MarkClean()
 		}
-		for _, t := range p.tabs {
-			if t.FilePath == path {
-				found = t
-				return
-			}
-		}
-	})
-	return found, found != nil
+	}
+	tab.pendingDiff = nil
+	return s.listInfo(), nil
 }
 
-// ProposeDiff is the entry point a host app's own AI-assistant tooling
-// calls to propose replacing path's content with newText: opens path
-// (via OpenFile) if it isn't already, then switches every Pane currently
-// showing that Tab into diff-review mode (a read-only red/green line
-// diff in the content area, Accept/Cancel in the south bar — see
-// diff.go/pane.go's showDiffReview). Accepting applies newText to the
-// Tab's Document and writes it to disk; Cancelling discards the proposal,
-// leaving the Document untouched. Both are plain synchronous methods, no
-// goroutine/channel API — same documented UI-goroutine-only contract as
-// AddTab/SplitRight/etc. (see group.go's doc comment).
-//
-// If path was already open but not the active tab of its Pane (a real
-// reported bug: with several tabs open, OpenFile happily returns the
-// existing, already-open-but-not-currently-shown Tab, pendingDiff got
-// set on it, and then nothing visibly happened — no Pane's active tab
-// matched it, so showDiffReview never ran anywhere), this activates the
-// Tab in every Pane that already holds it first, guaranteeing the diff
-// actually appears somewhere rather than silently attaching to a Tab
-// nothing is currently displaying.
-func (g *Group) ProposeDiff(path string, newText string) error {
-	tab, err := g.OpenFile(path)
+// CancelDiff discards id's pending diff, leaving its text untouched —
+// mirrors the original Group.cancelDiff.
+func (s *Service) CancelDiff(id string) ([]TabInfo, error) {
+	tab, ok := s.findTabByID(id)
+	if !ok {
+		return nil, errUnknownTab
+	}
+	tab.pendingDiff = nil
+	return s.listInfo(), nil
+}
+
+// CloseTab removes tab id from the open list (its file, if any, stays
+// watched — matches the original Group's "a watch is never explicitly
+// removed" simplification, see watch.go).
+func (s *Service) CloseTab(id string) []TabInfo {
+	s.mu.Lock()
+	for i, t := range s.tabs {
+		if t.ID == id {
+			s.tabs = append(s.tabs[:i], s.tabs[i+1:]...)
+			break
+		}
+	}
+	s.mu.Unlock()
+	return s.listInfo()
+}
+
+// CurrentFontSettings returns this instance's live font configuration.
+func (s *Service) CurrentFontSettings() fontsettings.FontSettings {
+	return s.fonts.Current()
+}
+
+// SetFontSettings replaces this instance's live font configuration
+// (clamped) and persists it to the db's Editors node — the Wails
+// equivalent of the original Fyne editorEntry's Ctrl+scroll handler
+// (font.go, deleted) writing through fontsettings.State.Set.
+func (s *Service) SetFontSettings(f fontsettings.FontSettings) error {
+	f = fontsettings.ClampFontSettings(f)
+	s.fonts.Set(f)
+	if s.app != nil {
+		s.app.Event.Emit("editors:font", f)
+	}
+
+	nodes, err := s.db.ListSettings()
 	if err != nil {
 		return err
 	}
-	walkPanes(g.root, func(p *Pane) {
-		if p.hasTab(tab) && p.active != tab {
-			p.setActive(tab)
-		}
-	})
-	tab.pendingDiff = &pendingDiff{newText: newText}
-	walkPanes(g.root, func(p *Pane) {
-		if p.active == tab {
-			p.showDiffReview(tab)
-		}
-	})
-	return nil
-}
-
-// acceptDiff is the south bar's Accept-button handler for a Pane in
-// diff-review mode over tab: applies tab.pendingDiff's newText to the
-// Document (so every other Pane showing the same Tab picks it up live,
-// via Document's existing listener mechanism — see document.go), writes
-// it to disk, then takes every Pane showing tab back out of diff-review
-// mode. A write failure is logged, not propagated — SouthBar's Accept
-// button has no error-reporting path today (matches this package's other
-// best-effort persistence, e.g. notifyChanged's own log.Printf on a save
-// error), but the Document change and diff-review exit still happen
-// either way, since the in-memory edit itself succeeded regardless of
-// whether the disk write did.
-func (g *Group) acceptDiff(tab *Tab) {
-	if tab.pendingDiff == nil {
-		return
+	node, ok := findRootNode(nodes, editorsSettingsLabel(s.groupID))
+	if !ok {
+		return nil // RegisterSettings was never called; nothing to persist against
 	}
-	newText := tab.pendingDiff.newText
-	tab.Doc.SetText(newText)
-	if err := os.WriteFile(tab.FilePath, []byte(newText), 0o644); err != nil {
-		log.Printf("editors: write %s: %v", tab.FilePath, err)
-	} else {
-		tab.Doc.MarkClean()
-	}
-	tab.pendingDiff = nil
-	g.exitDiffReview(tab)
-}
-
-// cancelDiff is the south bar's Cancel-button handler: discards
-// tab.pendingDiff without touching the Document, then takes every Pane
-// showing tab back out of diff-review mode.
-func (g *Group) cancelDiff(tab *Tab) {
-	if tab.pendingDiff == nil {
-		return
-	}
-	tab.pendingDiff = nil
-	g.exitDiffReview(tab)
-}
-
-// exitDiffReview takes every Pane currently showing tab as its active tab
-// back to normal (non-diff-review) display.
-func (g *Group) exitDiffReview(tab *Tab) {
-	walkPanes(g.root, func(p *Pane) {
-		if p.active == tab {
-			p.exitDiffReview()
-		}
+	return s.db.SaveProperties(node.ID, map[string]string{
+		fontsettings.KeyFontFamily:  f.Family,
+		fontsettings.KeyFontSize:    strconv.Itoa(f.Size),
+		fontsettings.KeyLineHeight:  strconv.FormatFloat(f.LineHeight, 'f', -1, 64),
+		fontsettings.KeyColumnWidth: strconv.FormatFloat(f.ColumnWidth, 'f', -1, 64),
 	})
 }
+
+// ReloadTab re-reads tab id's FilePath from disk into its Document,
+// discarding any unsaved in-memory edits — the "Load from Disk" half of
+// the file-changed notification flow (see watch.go's handleFileChanged
+// and the "editors:filechanged" event), the frontend equivalent of the
+// old south bar's SouthBarFileChanged mode.
+func (s *Service) ReloadTab(id string) ([]TabInfo, error) {
+	tab, ok := s.findTabByID(id)
+	if !ok {
+		return nil, errUnknownTab
+	}
+	if tab.FilePath == "" {
+		return nil, errors.New("editors: tab has no FilePath to reload from")
+	}
+	data, err := os.ReadFile(tab.FilePath)
+	if err != nil {
+		return nil, err
+	}
+	tab.Doc.SetText(string(data))
+	tab.Doc.MarkClean()
+	return s.listInfo(), nil
+}
+
+// LayoutTab identifies one tab within a persisted LayoutNode leaf: TabID
+// is preferred on restore (works whenever this Service's tab list still
+// has it — i.e. reopening the editor window within the same running app,
+// memory-only tabs included, since Tab IDs are only ever stable for the
+// process's lifetime); FilePath is the fallback for a tab whose ID is gone
+// (e.g. after a real app restart, when the Service's in-memory tab list —
+// and every ID in it — has reset) — a memory-only tab has no such
+// fallback and is simply dropped from the restored layout in that case.
+type LayoutTab struct {
+	TabID    string
+	FilePath string
+}
+
+// LayoutNode is the persisted shape of the frontend's split-pane tree — a
+// recursive value type mirroring editor.ts's own TreeNode, not the
+// relational db.EditorPane/EditorTab schema (which was designed for the
+// original Fyne version's Go-owned Pane tree; there is no such tree here
+// to map rows onto anymore). A leaf (Axis == "") lists every tab open in
+// that pane, in tab order, plus which one is active; a split node's A/B
+// are its two children.
+type LayoutNode struct {
+	Axis        string // "row"/"column"; "" means this is a leaf pane
+	SplitOffset float64
+	A           *LayoutNode
+	B           *LayoutNode
+	Tabs        []LayoutTab
+	ActiveTabID string
+}
+
+// SaveLayout persists the frontend's current split-pane tree, live — the
+// frontend calls this after every structural change (split/move/close) and
+// tab selection, same "write the whole current state on every change"
+// philosophy as go-ux/treestate.
+func (s *Service) SaveLayout(root LayoutNode) error {
+	blob, err := json.Marshal(root)
+	if err != nil {
+		return err
+	}
+	return s.db.SaveUIState(s.groupID+".layout", blob)
+}
+
+// LoadLayout returns the previously persisted split-pane tree, or nil if
+// nothing has been saved yet for this groupID.
+func (s *Service) LoadLayout() (*LayoutNode, error) {
+	blob, err := s.db.LoadUIState(s.groupID + ".layout")
+	if err != nil {
+		return nil, err
+	}
+	if blob == nil {
+		return nil, nil
+	}
+	var root LayoutNode
+	if err := json.Unmarshal(blob, &root); err != nil {
+		return nil, err
+	}
+	return &root, nil
+}
+
+// OpenFileDialog shows a native "Open File" picker and, if the user picks
+// a file (rather than cancelling), opens it via OpenFile — the Wails
+// equivalent of the "host app's own file picker" OpenFile's doc comment
+// says this package deliberately leaves to its caller.
+func (s *Service) OpenFileDialog() ([]TabInfo, error) {
+	path, err := s.app.Dialog.OpenFile().SetTitle("Open File").PromptForSingleSelection()
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return s.listInfo(), nil // user cancelled
+	}
+	return s.OpenFile(path)
+}
+
+// SaveTabAsDialog shows a native "Save As" picker and, if the user picks a
+// destination, calls SaveTabAs with it — the Wails equivalent of the
+// original Group.OnSaveAsRequested hook (this package has no file picker
+// of its own; the host previously supplied one, this Service now shows
+// Wails' native one directly).
+func (s *Service) SaveTabAsDialog(id string) ([]TabInfo, error) {
+	path, err := s.app.Dialog.SaveFile().SetMessage("Save File As").PromptForSingleSelection()
+	if err != nil {
+		return nil, err
+	}
+	if path == "" {
+		return s.listInfo(), nil // user cancelled
+	}
+	return s.SaveTabAs(id, path)
+}
+
+// OpenWindow opens the editor UI in its own window.
+func (s *Service) OpenWindow() {
+	s.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            "Editor",
+		Width:            900,
+		Height:           650,
+		BackgroundColour: application.NewRGB(30, 30, 30),
+		URL:              "/#editor",
+	})
+}
+
+var errUnknownTab = errors.New("editors: unknown tab id")

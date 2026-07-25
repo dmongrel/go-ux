@@ -91,27 +91,26 @@ func readEditorSettings(database *db.DB, groupID string) (font fontsettings.Font
 }
 
 // ApplyEditorSettings re-reads groupID's Editors node from database and
-// pushes its font value into group.fonts live — group re-renders against
-// the new size immediately (font.go's newContentThemeOverride listener) —
-// and updates group.fileWatchMode. A host app calls this after a
-// Settings-window OK/Apply commits new values, the same way
-// terminal.ApplyFontSettings does for terminal Sessions. A database with
-// no Editors node for groupID yet is not an error — ApplyEditorSettings
-// simply leaves group untouched, same graceful-fallback contract
-// readEditorSettings itself already has.
+// pushes its font value into svc.fonts live — every frontend view showing
+// svc's tabs picks up the change via CurrentFontSettings — and updates
+// svc.fileWatchMode. A host app calls this after a Settings-window
+// OK/Apply commits new values, the same way terminal.ApplyFontSettings
+// does for terminal Sessions. A database with no Editors node for groupID
+// yet is not an error — ApplyEditorSettings simply leaves svc untouched,
+// same graceful-fallback contract readEditorSettings itself already has.
 //
-// Changing fileWatchMode takes effect for the next file-change event;
-// an in-flight south-bar notification or a pending diff review already
-// showing is left as-is (there's nothing to "re-apply" retroactively to
-// something already resolved down to a user decision).
-func ApplyEditorSettings(database *db.DB, groupID string, group *Group) error {
+// Changing fileWatchMode takes effect for the next file-change event; a
+// pending diff review or file-changed notification already showing is
+// left as-is (there's nothing to "re-apply" retroactively to something
+// already resolved down to a user decision).
+func ApplyEditorSettings(database *db.DB, groupID string, svc *Service) error {
 	font, fileWatchMode, found, err := readEditorSettings(database, groupID)
 	if err != nil {
 		return err
 	}
 	if found {
-		group.fonts.Set(font)
-		group.fileWatchMode = fileWatchMode
+		svc.fonts.Set(font)
+		svc.fileWatchMode = fileWatchMode
 	}
 	return nil
 }

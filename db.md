@@ -75,32 +75,27 @@ type uiState struct {
 	Width, Height float32
 }
 
-func restoreSize(database *db.DB, win fyne.Window) {
+func restoredSize(database *db.DB) (width, height float32) {
 	blob, err := database.LoadUIState(myWindowID)
 	if err != nil || blob == nil {
-		return // no saved state yet (or a real error you may want to log)
+		return 0, 0 // no saved state yet (or a real error you may want to log)
 	}
 	var s uiState
 	if err := json.Unmarshal(blob, &s); err != nil {
-		return
+		return 0, 0
 	}
-	if s.Width > 0 && s.Height > 0 {
-		win.Resize(fyne.NewSize(s.Width, s.Height))
-	}
+	return s.Width, s.Height
 }
 
-func saveSize(database *db.DB, win fyne.Window) {
-	size := win.Canvas().Size()
-	blob, _ := json.Marshal(uiState{Width: size.Width, Height: size.Height})
+func saveSize(database *db.DB, width, height float32) {
+	blob, _ := json.Marshal(uiState{Width: width, Height: height})
 	_ = database.SaveUIState(myWindowID, blob)
 }
 
-// wire it up:
-restoreSize(database, win)
-win.SetCloseIntercept(func() {
-	saveSize(database, win)
-	win.Close()
-})
+// wire it up (Wails v3): read restoredSize before opening a window, pass
+// it into application.WebviewWindowOptions{Width, Height}; save it from a
+// window-close event hook (app.Event.On / WebviewWindow.OnWindowEvent with
+// events.Common.WindowClosing).
 ```
 
 Note the save is **live**, not staged: call `SaveUIState` whenever the state
@@ -109,10 +104,10 @@ UI state the way there is for settings properties. `LoadUIState` returns
 `(nil, nil)` (no error) when nothing has been saved yet for that
 `componentID`, so always check for a nil blob before unmarshalling.
 
-Fyne's desktop driver has no cross-platform window-position API, so only
-size (and, in the settings window's case, sidebar-splitter offset) is
-practical to persist this way — see `settings.md` for that concrete
-example.
+Wails has no cross-platform window-position API either, so only size is
+practical to persist this way. Note this is not how `go-ux/settings` or
+`go-ux/treestate` actually persist their own state today — see
+`settings.md`/`treestate.md` for what they use instead.
 
 ## The settings registry API (for reference)
 
@@ -128,10 +123,10 @@ func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, va
 ```
 
 `Node` and `Property` types, and the `PropertyType` enum
-(`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyEnum`), are exported
-from this package. Use `AddNode`/`AddProperty` to seed the registry before
-opening a `settings.Window` — see `go-ux/test.SeedExample` for a working
-example.
+(`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyFloat`/
+`PropertyEnum`), are exported from this package. Use `AddNode`/`AddProperty`
+to seed the registry before constructing a `settings.Service` — see
+`go-ux/test.SeedExample` for a working example.
 
 ## Constraints for callers
 
@@ -139,8 +134,7 @@ example.
   library/connection — `db.DB` assumes it's the only writer.
 - `SaveProperties` and the UI-state writes are independent; there's no
   cross-domain transaction tying a settings Apply to a UI-state save.
-- All methods are safe to call from the Fyne main/UI goroutine as currently
-  written (they're synchronous, blocking SQLite calls) — there is no
-  internal async/queueing. If you call them from a background goroutine and
-  then touch Fyne widgets with the result, follow Fyne's `fyne.Do` threading
-  guidance (see the repo's `CLAUDE.md`).
+- All methods are synchronous, blocking SQLite calls — safe to call from
+  any goroutine (there is no internal async/queueing), including directly
+  from a Wails Service method (which Wails itself already dispatches off
+  the frontend's calling context).
