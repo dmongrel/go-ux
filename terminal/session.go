@@ -8,8 +8,8 @@ package terminal
 // above this layer stay platform-agnostic.
 //
 // Reading and writing are both synchronous here — the background read-loop
-// goroutine and its fyne.Do-wrapped widget updates belong to the rendering
-// widget built on top of this interface, not to this layer.
+// goroutine that streams output to the frontend (via the terminal:data
+// event) belongs to Service, not to this layer.
 type ptySession interface {
 	// Write sends bytes to the shell's stdin (e.g. typed input).
 	Write(p []byte) (int, error)

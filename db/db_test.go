@@ -213,3 +213,4 @@ func TestOnPropertiesChangedOnlyFiresForItsOwnNode(t *testing.T) {
 		t.Error("nodeA's callback fired for a write to nodeB")
 	}
 }
+

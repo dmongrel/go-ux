@@ -242,3 +242,4 @@ func (d *DB) LoadUIState(componentID string) ([]byte, error) {
 	}
 	return blob, nil
 }
+

@@ -2,106 +2,103 @@
 
 Import path: `go-ux/dialog`
 
-A modal Fyne dialog window: info, error, and custom (label + input) variants,
-built on a plain `app.Window`. Unlike `go-ux/settings`, `Dialog.Show` blocks
-the calling goroutine until the user dismisses the dialog, so it must be
-called from a goroutine other than the one running `fyneApp.Run()`.
+A Wails v3 `Service` for modal dialogs: `ShowInfo`/`ShowError` use Wails'
+native `app.Dialog` API directly (no custom rendering); `ShowCustom` opens a
+real window rendering an arbitrary label+input property form, for the one
+case Wails has no native equivalent for. Register it and its companion
+frontend view (`uxdemo/frontend/src/views/dialog.ts`) to use it — see
+`CLAUDE.md`'s "Known limitation: frontend distribution".
 
-## Public API
+## Public API (Go)
 
 ```go
-func NewInfo(message string) *Dialog
-func NewError(message string) *Dialog
-func NewCustom() *Dialog
+func NewService(app *application.App) *Service
 
-func (d *Dialog) SetTitle(title string) *Dialog
-func (d *Dialog) SetSize(width, height float32) *Dialog
-func (d *Dialog) SetButtons(buttons ...ButtonKind) *Dialog
-func (d *Dialog) AddProperty(key, label string, kind PropertyKind) *Dialog
-func (d *Dialog) AddPropertyList(key, label string, initial []string) *Dialog
-func (d *Dialog) AddPropertyOptions(key, label string, kind PropertyKind, options, selected []string) *Dialog
-func (d *Dialog) Show(fyneApp fyne.App) map[string]any
+func (s *Service) ShowInfo(title string, message string)
+func (s *Service) ShowError(title string, message string)
+func (s *Service) ShowCustom(spec CustomDialogSpec) map[string]any
+
+// bound methods a Custom dialog's own window calls back into — not meant
+// to be called directly by a host app
+func (s *Service) GetSpec(id string) CustomDialogSpec
+func (s *Service) Submit(id string, result map[string]any)
+func (s *Service) CancelDialog(id string)
 ```
 
-`NewInfo`/`NewError` build a single-button (OK) dialog showing `message` in
-a scrollable text area, titled "Info"/"Error" by default. `NewCustom` builds
-a dialog whose content is entirely defined by `AddProperty`/`AddPropertyList`/
-`AddPropertyOptions` calls, titled "Custom" by default with a single OK
-button; `SetTitle`/`SetButtons` override either. `SetButtons` and the
-`AddProperty*` methods are no-ops (return `d` unchanged) on non-custom
-dialogs.
+`ShowInfo`/`ShowError` are fire-and-forget — Wails' native dialog blocks its
+own OS-level modal loop, not the calling goroutine.
 
-`Show` builds and displays the window, then blocks until OK, Cancel, or the
-window is closed. For a custom dialog, OK returns a map keyed by each
-property's `key`; Cancel and closing the window both return `nil`. Info and
-error dialogs always return `nil`.
+`ShowCustom` blocks the calling goroutine until the user clicks a button or
+closes the window (same contract the original Fyne `Dialog.Show` had) — so
+call it from a goroutine other than the one running `app.Run()`. It opens a
+window whose frontend (`dialog.ts`) fetches `spec` via `GetSpec`, renders the
+property form, and calls `Submit`/`CancelDialog` on OK/Cancel/close, which is
+what lets the blocked `ShowCustom` call return. For OK, the result is a map
+keyed by each `Property`'s `Key`, typed per its `PropertyKind` (`bool`/
+`string`/`int`, or `[]string` for `list`/`multiSelect`; `dropdown` is
+`string`). Cancel and closing the window both return `nil`.
 
-The window defaults to 800x600 for info/error dialogs and 800x800 for custom
-dialogs (custom dialogs tend to hold more content). `SetSize` overrides
-either default; both `width` and `height` must be positive or the call is a
-no-op.
+```go
+type CustomDialogSpec struct {
+	Title      string
+	Buttons    []ButtonKind      // defaults to []ButtonKind{ButtonOK} if empty
+	Properties []Property
+	Width      int               // defaults to 800 if <= 0
+	Height     int               // defaults to 800 if <= 0
+}
+
+type Property struct {
+	Key      string
+	Label    string
+	Kind     PropertyKind
+	Initial  []string // PropertyList seed items
+	Options  []string // PropertyDropdown/PropertyMultiSelect choice set
+	Selected []string // PropertyDropdown/PropertyMultiSelect pre-selection
+}
+```
 
 ## Minimal usage
 
 ```go
-package main
-
-import (
-	"log"
-
-	"fyne.io/fyne/v2/app"
-
-	"go-ux/dialog"
-)
-
-func main() {
-	fyneApp := app.NewWithID("your.app.id")
-
-	go func() {
-		dialog.NewInfo("This is an informational message.").Show(fyneApp)
-
-		result := dialog.NewCustom().
-			SetTitle("Preferences").
-			SetButtons(dialog.ButtonOK, dialog.ButtonCancel).
-			AddProperty("enabled", "Enabled", dialog.PropertyBool).
-			AddPropertyOptions("mode", "Mode", dialog.PropertyDropdown,
-				[]string{"fast", "balanced", "thorough"}, []string{"balanced"}).
-			Show(fyneApp)
-		log.Printf("result: %#v", result)
-
-		fyneApp.Quit()
-	}()
-
-	fyneApp.Run()
-}
+app := application.New(application.Options{ /* ... */ })
+app.RegisterService(application.NewService(dialog.NewService(app)))
 ```
 
-## Custom dialog property kinds
+```ts
+// hub.ts or wherever
+import {ShowInfo, ShowCustom} from "../../bindings/go-ux/dialog/service";
 
-| `PropertyKind`        | Widget                    | Result type | Notes                                                                  |
-|------------------------|----------------------------|--------------|-------------------------------------------------------------------------|
-| `PropertyLabel`        | `widget.Label`             | (none)       | Message only; not included in `Show`'s result map.                     |
-| `PropertyBool`         | `widget.Check`             | `bool`       |                                                                          |
-| `PropertyTextField`    | `widget.Entry`             | `string`     |                                                                          |
-| `PropertyInt`          | validated `widget.Entry`   | `int`        | Rejects non-integer input via the entry's validator.                   |
-| `PropertyList`         | `widget.List` + add/remove | `[]string`   | Added via `AddPropertyList`; add/remove edits the bound item list.     |
-| `PropertyDropdown`     | `widget.Select`            | `string`     | Added via `AddPropertyOptions`; closed set of `options`, no free text. |
-| `PropertyMultiSelect`  | `widget.CheckGroup`        | `[]string`   | Added via `AddPropertyOptions`; any subset of `options`.               |
+ShowInfo("Info", "This is a native Wails info dialog.");
 
-`AddPropertyOptions`'s `selected` argument is the pre-chosen subset for
-`PropertyMultiSelect`, or a single-element slice (`selected[0]`) for
-`PropertyDropdown` — a `PropertyDropdown` ignores any elements after the
-first.
+const result = await ShowCustom({
+    Title: "Preferences",
+    Buttons: ["OK", "Cancel"],
+    Properties: [
+        {Key: "enabled", Label: "Enabled", Kind: "bool", Initial: [], Options: [], Selected: []},
+        {Key: "mode", Label: "Mode", Kind: "dropdown", Initial: [], Options: ["fast", "balanced", "thorough"], Selected: ["balanced"]},
+    ],
+});
+```
 
-All rows in a custom dialog are laid out in a single scrollable panel
-(`container.NewVScroll`), so a form with many properties scrolls rather than
-growing the window indefinitely.
+## Property kinds
+
+| `PropertyKind`  | Frontend control       | Result type | Notes                                                                  |
+|------------------|-------------------------|--------------|-------------------------------------------------------------------------|
+| `label`          | text only               | (none)       | Not included in the result map.                                        |
+| `bool`           | checkbox                | `bool`       |                                                                          |
+| `textField`      | text input              | `string`     |                                                                          |
+| `int`            | number input            | `int`        |                                                                          |
+| `list`           | editable string list    | `[]string`   | Seeded via `Initial`; add/remove edits the list client-side.           |
+| `dropdown`       | select                  | `string`     | Closed set of `Options`, `Selected[0]` is the pre-chosen value.        |
+| `multiSelect`    | checkbox group          | `[]string`   | Any subset of `Options`, pre-chosen via `Selected`.                    |
 
 ## Constraints for callers
 
-- `Show` must be called off the goroutine running `fyneApp.Run()` — it
-  blocks on an internal channel until the dialog closes.
-- `SetButtons` accepts at most two `ButtonKind` values (`ButtonOK`,
-  `ButtonCancel`); extra values beyond the first two are dropped.
-- This package assumes desktop Fyne (native title bar, resizable window). It
-  has not been tested against Fyne's mobile driver.
+- `ShowCustom` must be called off the goroutine running `app.Run()` — it
+  blocks on an internal channel until the dialog window resolves.
+- `Buttons` accepts at most two entries in practice (`ButtonOK`/
+  `ButtonCancel`) — the frontend renders one button per entry, in order.
+- `ShowCustom`'s window-close handling and an explicit `Submit`/
+  `CancelDialog` call can race (e.g. `Submit` closing the window itself also
+  fires the close hook) — only the first resolution wins, the rest are
+  silent no-ops (see `service.go`'s `resolve`).

@@ -22,9 +22,9 @@ func newTestDB(t *testing.T) *db.DB {
 }
 
 // TestRegisterSettingsCreatesTerminalNodeWithProperties confirms
-// RegisterSettings seeds exactly the two-property minimal slice this task
-// calls for: a root "Terminal" node with default_shell (enum) and
-// close_on_exit (bool, default "true").
+// RegisterSettings seeds a root "Terminal" node with default_shell (enum)
+// and close_on_exit (bool, default "true"), among the full 22-row set (see
+// TestRegisterSettingsSeedsAll22Rows for the complete inventory).
 func TestRegisterSettingsCreatesTerminalNodeWithProperties(t *testing.T) {
 	d := newTestDB(t)
 
@@ -45,8 +45,8 @@ func TestRegisterSettingsCreatesTerminalNodeWithProperties(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProperties: %v", err)
 	}
-	if len(props) != 6 {
-		t.Fatalf("len(props) = %d, want 6 (default_shell, close_on_exit, font_family, font_size, line_height, column_width) (%+v)", len(props), props)
+	if len(props) != 22 {
+		t.Fatalf("len(props) = %d, want 22 (%+v)", len(props), props)
 	}
 
 	byKey := make(map[string]db.Property, len(props))
@@ -296,5 +296,99 @@ func TestRegisterSettingsDoesNotTouchOtherNodes(t *testing.T) {
 	}
 	if len(nodes) != 2 {
 		t.Errorf("len(nodes) = %d, want 2", len(nodes))
+	}
+}
+
+// TestRegisterSettingsSeedsAll22Rows confirms every row of the design
+// plan's full property table exists with the right key, type, and default
+// value — not just the two/six that actually drive live behavior today.
+// Per settings_schema.go's doc comment, the rest are intentional seeded
+// placeholders for features this package hasn't built yet.
+func TestRegisterSettingsSeedsAll22Rows(t *testing.T) {
+	d := newTestDB(t)
+
+	if err := RegisterSettings(d); err != nil {
+		t.Fatalf("RegisterSettings: %v", err)
+	}
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	node, ok := findRootNode(nodes, "Terminal")
+	if !ok {
+		t.Fatalf("no root Terminal node found")
+	}
+	props, err := d.GetProperties(node.ID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	byKey := make(map[string]db.Property, len(props))
+	for _, p := range props {
+		byKey[p.Key] = p
+	}
+
+	wantDefault := "PowerShell"
+	if shells := DetectShells(); len(shells) > 0 {
+		wantDefault = shells[0].Name
+	}
+
+	cases := []struct {
+		key     string
+		ptype   db.PropertyType
+		wantVal string
+	}{
+		{KeyDefaultShell, db.PropertyEnum, wantDefault},
+		{KeyDefaultTabName, db.PropertyString, "Shell"},
+		{KeyUseAppTitleAsTabName, db.PropertyBool, "false"},
+		{KeyStartDirectory, db.PropertyString, ""},
+		{KeyCloseOnExit, db.PropertyBool, "true"},
+		{KeyFontFamily, db.PropertyEnum, fontFamilyDefault},
+		{KeyFontSize, db.PropertyInt, "13"},
+		{KeyLineHeight, db.PropertyFloat, "1"},
+		{KeyColumnWidth, db.PropertyFloat, "1"},
+		{KeyScrollbackLines, db.PropertyInt, "1000"},
+		{KeyCursorBlink, db.PropertyBool, "true"},
+		{KeyCursorShape, db.PropertyEnum, "block"},
+		{KeyMinContrastRatio, db.PropertyInt, "1"},
+		{KeyAudibleBell, db.PropertyBool, "true"},
+		{KeyMouseReporting, db.PropertyBool, "true"},
+		{KeyCopyOnSelection, db.PropertyBool, "false"},
+		{KeyPasteOnMiddleClick, db.PropertyBool, "false"},
+		{KeyOverrideHostShortcuts, db.PropertyBool, "false"},
+		{KeyFocusEscapeKey, db.PropertyString, "Escape"},
+		{KeyHighlightHyperlinks, db.PropertyBool, "true"},
+		{KeyShellIntegration, db.PropertyBool, "false"},
+		{KeyShowCommandSeparators, db.PropertyBool, "false"},
+	}
+	if len(cases) != 22 {
+		t.Fatalf("test itself lists %d cases, want 22 — fix the test", len(cases))
+	}
+
+	for _, c := range cases {
+		p, ok := byKey[c.key]
+		if !ok {
+			t.Errorf("missing property %q", c.key)
+			continue
+		}
+		if p.Type != c.ptype {
+			t.Errorf("%s.Type = %v, want %v", c.key, p.Type, c.ptype)
+		}
+		if c.key == KeyFontFamily || c.key == KeyLineHeight || c.key == KeyColumnWidth || c.key == KeyFontSize {
+			continue // font values are seeded via fontsettings.SeedFontProperties, already covered by TestRegisterSettingsSeedsFontProperties
+		}
+		if p.Value != c.wantVal {
+			t.Errorf("%s.Value = %q, want %q", c.key, p.Value, c.wantVal)
+		}
+	}
+
+	cursorShapeProp := byKey[KeyCursorShape]
+	wantOptions := []string{"block", "underline", "bar"}
+	if len(cursorShapeProp.EnumOptions) != len(wantOptions) {
+		t.Fatalf("cursor_shape.EnumOptions = %v, want %v", cursorShapeProp.EnumOptions, wantOptions)
+	}
+	for i, opt := range wantOptions {
+		if cursorShapeProp.EnumOptions[i] != opt {
+			t.Errorf("cursor_shape.EnumOptions[%d] = %q, want %q", i, cursorShapeProp.EnumOptions[i], opt)
+		}
 	}
 }
