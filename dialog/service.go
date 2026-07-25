@@ -103,6 +103,12 @@ func (s *Service) ShowError(title string, message string) {
 	s.app.Dialog.Error().SetTitle(title).SetMessage(message).Show()
 }
 
+// PickFile shows a native "Open File" picker and returns the selected path,
+// or "" if the user cancels.
+func (s *Service) PickFile() (string, error) {
+	return s.app.Dialog.OpenFile().SetTitle("Open File").PromptForSingleSelection()
+}
+
 // ShowCustom opens a window rendering spec's property form and blocks the
 // calling goroutine until the user clicks a button or closes the window —
 // matching go-ux/dialog.Dialog.Show's original blocking contract. Must be

@@ -1,4 +1,4 @@
-import {ShowInfo, ShowError, ShowCustom} from "../../bindings/go-ux/dialog/service";
+import {ShowInfo, ShowError, ShowCustom, PickFile} from "../../bindings/go-ux/dialog/service";
 import {OpenWindow as OpenSettingsWindow} from "../../bindings/go-ux/settings/service";
 import {OpenWindow as OpenTerminalWindow} from "../../bindings/go-ux/terminal/service";
 import {OpenWindow as OpenEditorWindow} from "../../bindings/go-ux/editors/service";
@@ -19,6 +19,7 @@ export function mountHub(root: HTMLElement) {
             <button class="btn" id="settings-btn">Open Settings</button>
             <button class="btn" id="terminal-btn">Open Terminal</button>
             <button class="btn" id="editor-btn">Open Editor</button>
+            <button class="btn" id="pick-file-btn">Open File Dialog</button>
           </div>
         </div>
     `;
@@ -57,5 +58,10 @@ export function mountHub(root: HTMLElement) {
 
     (root.querySelector("#editor-btn") as HTMLButtonElement).addEventListener("click", () => {
         OpenEditorWindow();
+    });
+
+    (root.querySelector("#pick-file-btn") as HTMLButtonElement).addEventListener("click", async () => {
+        const path = await PickFile();
+        ShowInfo("Picked File", path || "(cancelled)");
     });
 }
