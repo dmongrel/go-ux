@@ -29,6 +29,7 @@ func (s *Service) Start(shellName string, cols, rows int) (string, error)
 func (s *Service) WriteInput(sessionID string, data string) error
 func (s *Service) Resize(sessionID string, cols int, rows int) error
 func (s *Service) CloseSession(sessionID string) error
+func (s *Service) CloseOnExit() bool
 func (s *Service) Close()
 func (s *Service) CurrentFontSettings() FontSettings
 func (s *Service) SetFontSettings(f FontSettings) error
@@ -52,8 +53,12 @@ not found) and returns a session ID. Output streams asynchronously via the
 `terminal:data` event (`SessionOutput{SessionID, Data}` — multiple
 sessions/tabs share one event channel, routed client-side by `SessionID`).
 `WriteInput`/`Resize`/`CloseSession` operate on a session by ID.
-`Close` terminates every open session — call it from `app.OnShutdown` so a
-closed terminal window never leaves an orphaned shell process running.
+`CloseOnExit` reports whether a tab whose shell process exits on its own
+should be auto-closed — the frontend's `terminal:exit` handler checks it
+before closing (`RegisterSettings`' seeded default is `true`; `false` if
+`RegisterSettings` was never called). `Close` terminates every open
+session — call it from `app.OnShutdown` so a closed terminal window never
+leaves an orphaned shell process running.
 
 `CurrentFontSettings`/`SetFontSettings` expose the live, shared font
 configuration (every open session across every open terminal window renders

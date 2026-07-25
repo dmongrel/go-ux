@@ -8,10 +8,9 @@ import (
 // editorsSettingsLabel returns groupID's settings-tree root node
 // description. Scoped per groupID — not one shared "Editors" node the way
 // terminal has a single "Terminal" node for every Session — because font
-// size and file-watch mode are independent per Group instance (see
-// font.go's "independent per Group instance" design decision), the same
-// way layout persistence (SaveEditorLayout/LoadEditorLayout) is already
-// scoped per groupID.
+// size and file-watch mode are independent per Service instance, the same
+// way layout persistence (Service.SaveLayout/LoadLayout, mcptooling.go) is
+// already scoped per groupID.
 func editorsSettingsLabel(groupID string) string {
 	return "Editors: " + groupID
 }

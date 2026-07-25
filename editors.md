@@ -29,6 +29,8 @@ func (s *Service) AcceptDiff(id string, finalText string) ([]TabInfo, error)
 func (s *Service) CancelDiff(id string) ([]TabInfo, error)
 func (s *Service) CurrentFontSettings() fontsettings.FontSettings
 func (s *Service) SetFontSettings(f fontsettings.FontSettings) error
+func (s *Service) SaveLayout(root LayoutNode) error
+func (s *Service) LoadLayout() (*LayoutNode, error)
 func (s *Service) OpenWindow()
 func (s *Service) Close()
 
@@ -39,6 +41,20 @@ type TabInfo struct {
     Text        string
     Dirty       bool
     PendingDiff *string
+}
+
+type LayoutTab struct {
+    TabID    string
+    FilePath string
+}
+
+type LayoutNode struct {
+    Axis        string // "row"/"column"; "" means this is a leaf pane
+    SplitOffset float64
+    A           *LayoutNode
+    B           *LayoutNode
+    Tabs        []LayoutTab
+    ActiveTabID string
 }
 
 func RegisterSettings(database *db.DB, groupID string) error
@@ -118,7 +134,7 @@ original Fyne version's south-bar `SouthBarFileChanged` mode. A watch is
 never explicitly removed once started (lives for the `Service`'s lifetime);
 `Close` stops the whole watcher.
 
-## Split panes and Markdown preview — now entirely frontend-owned
+## Split panes, persisted layout, and Markdown preview — frontend-owned
 
 The split-pane tree, live cross-pane document sync (`SharedDoc`), and the
 Split/Split-and-Move/Move right-click menu (`uxdemo/frontend/src/views/editor.ts`)
@@ -126,12 +142,26 @@ were ported from a standalone Wails prototype that had already independently
 re-derived the original Fyne `split.go` tree algorithm — and *generalized*
 it beyond what the original supported (collecting into a single pane when
 moving out of a 2-pane stack, and quadrant positional correspondence for
-Move). There is no Go-side pane/split state to persist or query; a
-`Service` only knows about a flat list of open tabs. Markdown preview is
-rendered client-side (`marked`, a snapshot render — doesn't live-update if
-edited from another pane showing the same tab) rather than porting the
-original goldmark-AST-to-Fyne-widget renderer, since the preview target is
-now HTML, not a Fyne canvas tree.
+Move). There is no Go-side pane/split state — a `Service` only knows about
+a flat list of open tabs — but the frontend persists the *shape* of that
+tree via `SaveLayout`/`LoadLayout`, stored as one JSON blob (via
+`db.SaveUIState`/`LoadUIState`, keyed by `groupID + ".layout"`) rather than
+the relational schema the original Fyne version's `db.EditorPane`/
+`EditorTab` used (removed — there's no Go-owned Pane tree left to map rows
+onto). The frontend calls `SaveLayout` after every structural change and
+tab selection; on mount, `LoadLayout` is replayed by resolving each
+`LayoutTab` — preferring `TabID` (works whenever this `Service`'s process
+hasn't restarted since, memory-only tabs included) and falling back to
+reopening `FilePath` from disk otherwise (a memory-only tab whose ID is
+gone from a real restart has no such fallback and is dropped).
+
+Markdown preview is rendered client-side (`marked`, a snapshot render —
+doesn't live-update if edited from another pane showing the same tab)
+rather than porting the original goldmark-AST-to-Fyne-widget renderer,
+since the preview target is now HTML, not a Fyne canvas tree. Soft-wrap is
+a per-pane toggle on the line-number gutter's own right-click menu (an
+IDE-style placement, not a toolbar button) — CodeMirror's `basicSetup`
+gives line numbers by default but not wrapping.
 
 ## Constraints for callers
 
@@ -141,10 +171,7 @@ now HTML, not a Fyne canvas tree.
   every pane showing it; this package has no notion of "which panes show
   this tab."
 - `SetFontSettings` is per-`Service` instance, not per-tab or per-pane.
-- **Not yet re-implemented in the Wails port** (present in the original
-  Fyne version): persisted split-pane layout (`db.EditorPane`/`EditorTab`
-  survive on `db.DB` for a future consumer, but nothing in this package
-  writes/reads them anymore — layout lives only in frontend memory, lost on
-  window close), a soft-wrap toggle (CodeMirror's `basicSetup` gives line
-  numbers by default, but not line wrapping — long lines scroll
-  horizontally with no way to turn wrapping on).
+- `SaveLayout`/`LoadLayout` persist pane *shape* and which tabs are open
+  where — not resize-bar split-offset values (`LayoutNode.SplitOffset` is
+  always written as `0.5`; the frontend doesn't yet support dragging a
+  resize bar at all, so there's nothing else to persist there).

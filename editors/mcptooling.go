@@ -344,12 +344,12 @@ type LayoutTab struct {
 }
 
 // LayoutNode is the persisted shape of the frontend's split-pane tree — a
-// recursive value type mirroring editor.ts's own TreeNode, not the
-// relational db.EditorPane/EditorTab schema (which was designed for the
-// original Fyne version's Go-owned Pane tree; there is no such tree here
-// to map rows onto anymore). A leaf (Axis == "") lists every tab open in
-// that pane, in tab order, plus which one is active; a split node's A/B
-// are its two children.
+// recursive value type mirroring editor.ts's own TreeNode, stored as one
+// JSON blob via db.SaveUIState/LoadUIState (not a relational schema — the
+// original Fyne version's Go-owned Pane tree that would have mapped onto
+// one no longer exists). A leaf (Axis == "") lists every tab open in that
+// pane, in tab order, plus which one is active; a split node's A/B are its
+// two children.
 type LayoutNode struct {
 	Axis        string // "row"/"column"; "" means this is a leaf pane
 	SplitOffset float64
