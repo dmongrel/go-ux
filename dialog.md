@@ -60,7 +60,7 @@ type Property struct {
 	Key      string
 	Label    string
 	Kind     PropertyKind
-	Initial  []string // PropertyList seed items
+	Initial  []string // PropertyList seed items; Initial[0] pre-fills PropertyTextField
 	Options  []string // PropertyDropdown/PropertyMultiSelect choice set
 	Selected []string // PropertyDropdown/PropertyMultiSelect pre-selection
 }
@@ -125,7 +125,7 @@ encoding (WebView2 sniffs the real format from the bytes for `<img>` tags).
 |------------------|-------------------------|--------------|-------------------------------------------------------------------------|
 | `label`          | text only               | (none)       | Not included in the result map.                                        |
 | `bool`           | checkbox                | `bool`       |                                                                          |
-| `textField`      | text input              | `string`     |                                                                          |
+| `textField`      | text input              | `string`     | Pre-filled from `Initial[0]` if present.                               |
 | `int`            | number input            | `int`        |                                                                          |
 | `list`           | editable string list    | `[]string`   | Seeded via `Initial`; add/remove edits the list client-side.           |
 | `dropdown`       | select                  | `string`     | Closed set of `Options`, `Selected[0]` is the pre-chosen value.        |

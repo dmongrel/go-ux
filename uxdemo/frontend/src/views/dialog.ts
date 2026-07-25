@@ -83,6 +83,7 @@ function renderProperty(prop: Property, fields: Map<string, () => unknown>): HTM
             const input = document.createElement("input");
             input.className = "input";
             input.type = "text";
+            input.value = (prop.Initial ?? [])[0] ?? "";
             fields.set(prop.Key, () => input.value);
             row.appendChild(input);
             break;
