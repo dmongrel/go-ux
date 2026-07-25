@@ -1,5 +1,6 @@
 import {mountHub} from "./views/hub";
 import {mountDialog} from "./views/dialog";
+import {mountImageGrid} from "./views/imagegrid";
 import {mountSettings} from "./views/settings";
 import {mountTerminal} from "./views/terminal";
 import {mountEditor} from "./views/editor";
@@ -18,6 +19,9 @@ function route() {
     switch (hash) {
         case "#dialog":
             mountDialog(root);
+            break;
+        case "#imagegrid":
+            mountImageGrid(root);
             break;
         case "#settings":
             mountSettings(root);

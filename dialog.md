@@ -4,10 +4,12 @@ Import path: `go-ux/dialog`
 
 A Wails v3 `Service` for modal dialogs: `ShowInfo`/`ShowError` use Wails'
 native `app.Dialog` API directly (no custom rendering); `ShowCustom` opens a
-real window rendering an arbitrary label+input property form, for the one
-case Wails has no native equivalent for. Register it and its companion
-frontend view (`uxdemo/frontend/src/views/dialog.ts`) to use it — see
-`CLAUDE.md`'s "Known limitation: frontend distribution".
+real window rendering an arbitrary label+input property form, and
+`ShowImageGrid` opens a real window rendering an image-only thumbnail grid —
+both for cases Wails has no native equivalent for. Register the Service and
+its companion frontend views (`uxdemo/frontend/src/views/dialog.ts`,
+`imagegrid.ts`) to use it — see `CLAUDE.md`'s "Known limitation: frontend
+distribution".
 
 ## Public API (Go)
 
@@ -17,12 +19,19 @@ func NewService(app *application.App) *Service
 func (s *Service) ShowInfo(title string, message string)
 func (s *Service) ShowError(title string, message string)
 func (s *Service) ShowCustom(spec CustomDialogSpec) map[string]any
+func (s *Service) ShowImageGrid(spec ImageGridSpec) string
 
 // bound methods a Custom dialog's own window calls back into — not meant
 // to be called directly by a host app
 func (s *Service) GetSpec(id string) CustomDialogSpec
 func (s *Service) Submit(id string, result map[string]any)
 func (s *Service) CancelDialog(id string)
+
+// bound methods an ImageGrid dialog's own window calls back into — not
+// meant to be called directly by a host app
+func (s *Service) GetImageGridSpec(id string) ImageGridSpec
+func (s *Service) SelectImage(id string, key string)
+func (s *Service) CancelImageGrid(id string)
 ```
 
 `ShowInfo`/`ShowError` are fire-and-forget — Wails' native dialog blocks its
@@ -80,6 +89,36 @@ const result = await ShowCustom({
 });
 ```
 
+`ShowImageGrid` has the same blocking contract as `ShowCustom` — call it off
+`app.Run()`'s goroutine. It opens a window whose frontend (`imagegrid.ts`)
+fetches `spec` via `GetImageGridSpec`, renders each `Option` as a clickable
+image-only thumbnail (no labels — matches the original Fyne parchment-
+texture picker this replaces), and calls `SelectImage` on click or
+`CancelImageGrid`/closes the window to cancel. Returns the clicked option's
+`Key`, or `""` if cancelled/closed without a selection.
+
+```go
+type ImageGridSpec struct {
+	Title    string
+	Options  []ImageOption
+	Selected string // currently-selected Key, highlighted; "" if none
+	Width    int    // defaults to 480 if <= 0
+	Height   int    // defaults to 400 if <= 0
+}
+
+type ImageOption struct {
+	Key       string // identifies the option; not shown to the user
+	ImageData []byte // raw image bytes (JPEG/PNG/etc.)
+}
+```
+
+`ImageData` crosses the Go↔JS boundary as a base64 string — Wails' JSON
+binding encodes a Go `[]byte` field that way automatically both directions,
+so a caller passes raw bytes in Go and the frontend gets a base64 string it
+can drop straight into a `data:` URI. See `imagegrid.ts`'s own comment on
+why it hardcodes `image/png` in that URI regardless of the option's actual
+encoding (WebView2 sniffs the real format from the bytes for `<img>` tags).
+
 ## Property kinds
 
 | `PropertyKind`  | Frontend control       | Result type | Notes                                                                  |
@@ -102,3 +141,6 @@ const result = await ShowCustom({
   `CancelDialog` call can race (e.g. `Submit` closing the window itself also
   fires the close hook) — only the first resolution wins, the rest are
   silent no-ops (see `service.go`'s `resolve`).
+- `ShowImageGrid` must likewise be called off `app.Run()`'s goroutine, and
+  has the identical `SelectImage`/`CancelImageGrid`-vs-window-close race
+  guard (see `service.go`'s `resolveImageGrid`).

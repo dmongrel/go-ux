@@ -79,17 +79,21 @@ type CustomDialogSpec struct {
 type Service struct {
 	app *application.App
 
-	mu      sync.Mutex
-	nextID  int
-	pending map[string]chan map[string]any
-	specs   map[string]CustomDialogSpec
+	mu           sync.Mutex
+	nextID       int
+	pending      map[string]chan map[string]any
+	specs        map[string]CustomDialogSpec
+	imagePending map[string]chan string
+	imageSpecs   map[string]ImageGridSpec
 }
 
 func NewService(app *application.App) *Service {
 	return &Service{
-		app:     app,
-		pending: make(map[string]chan map[string]any),
-		specs:   make(map[string]CustomDialogSpec),
+		app:          app,
+		pending:      make(map[string]chan map[string]any),
+		specs:        make(map[string]CustomDialogSpec),
+		imagePending: make(map[string]chan string),
+		imageSpecs:   make(map[string]ImageGridSpec),
 	}
 }
 
@@ -183,6 +187,120 @@ func normalizeSpec(spec CustomDialogSpec) CustomDialogSpec {
 		spec.Height = defaultHeight
 	}
 	return spec
+}
+
+// ImageOption is one selectable thumbnail in a ShowImageGrid grid.
+type ImageOption struct {
+	// Key identifies the option; not shown to the user. Returned by
+	// ShowImageGrid when this option is picked.
+	Key string
+	// ImageData is the option's raw image bytes (JPEG/PNG/etc.), served to
+	// the frontend as a data: URI — Wails' JSON binding encodes a Go []byte
+	// field as a base64 string automatically, so no separate asset-serving
+	// endpoint is needed.
+	ImageData []byte
+}
+
+// ImageGridSpec describes a ShowImageGrid window's content: an image-only
+// thumbnail grid (no labels), matching the original Fyne parchment-texture
+// picker's behavior this replaces.
+type ImageGridSpec struct {
+	Title    string
+	Options  []ImageOption
+	Selected string // currently-selected Key, highlighted; "" if none
+	Width    int
+	Height   int
+}
+
+const (
+	defaultImageGridWidth  = 480
+	defaultImageGridHeight = 400
+)
+
+// normalizeImageGridSpec fills in ShowImageGrid's default window size —
+// split out so it's testable without a running Wails app, same reason
+// normalizeSpec is split from ShowCustom.
+func normalizeImageGridSpec(spec ImageGridSpec) ImageGridSpec {
+	if spec.Width <= 0 {
+		spec.Width = defaultImageGridWidth
+	}
+	if spec.Height <= 0 {
+		spec.Height = defaultImageGridHeight
+	}
+	return spec
+}
+
+// ShowImageGrid opens a window rendering spec's image thumbnails in a grid
+// and blocks the calling goroutine until the user clicks one or closes the
+// window — same blocking contract as ShowCustom, and the same restriction:
+// must be called from a goroutine other than the one running app.Run().
+// Returns the clicked option's Key, or "" if the window was closed without
+// a selection.
+func (s *Service) ShowImageGrid(spec ImageGridSpec) string {
+	spec = normalizeImageGridSpec(spec)
+
+	s.mu.Lock()
+	s.nextID++
+	id := fmt.Sprintf("%d", s.nextID)
+	result := make(chan string, 1)
+	s.imagePending[id] = result
+	s.imageSpecs[id] = spec
+	s.mu.Unlock()
+
+	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:            spec.Title,
+		Width:            spec.Width,
+		Height:           spec.Height,
+		BackgroundColour: application.NewRGB(30, 30, 30),
+		URL:              "/#imagegrid?id=" + id,
+	})
+	win.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		s.resolveImageGrid(id, "")
+	})
+
+	selected := <-result
+
+	s.mu.Lock()
+	delete(s.imageSpecs, id)
+	s.mu.Unlock()
+
+	return selected
+}
+
+// GetImageGridSpec is called by a ShowImageGrid window's own frontend on
+// mount, to fetch the ImageGridSpec ShowImageGrid is waiting on.
+func (s *Service) GetImageGridSpec(id string) ImageGridSpec {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.imageSpecs[id]
+}
+
+// SelectImage is called by a ShowImageGrid window's frontend when the user
+// clicks a thumbnail, delivering its Key and letting the matching
+// ShowImageGrid call return.
+func (s *Service) SelectImage(id string, key string) {
+	s.resolveImageGrid(id, key)
+}
+
+// CancelImageGrid is called by a ShowImageGrid window's frontend if it adds
+// an explicit Cancel affordance beyond just closing the window.
+func (s *Service) CancelImageGrid(id string) {
+	s.resolveImageGrid(id, "")
+}
+
+// resolveImageGrid delivers key to id's pending ShowImageGrid call, if it
+// hasn't already been resolved — same idempotency guard resolve documents
+// (a click and the window-closing hook can race).
+func (s *Service) resolveImageGrid(id string, key string) {
+	s.mu.Lock()
+	ch, ok := s.imagePending[id]
+	if ok {
+		delete(s.imagePending, id)
+	}
+	s.mu.Unlock()
+	if ok {
+		ch <- key
+	}
 }
 
 // resolve delivers result to id's pending ShowCustom call, if it hasn't

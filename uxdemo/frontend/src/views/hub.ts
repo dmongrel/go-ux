@@ -1,4 +1,4 @@
-import {ShowInfo, ShowError, ShowCustom, PickFile} from "../../bindings/go-ux/dialog/service";
+import {ShowInfo, ShowError, ShowCustom, ShowImageGrid, PickFile} from "../../bindings/go-ux/dialog/service";
 import {OpenWindow as OpenSettingsWindow} from "../../bindings/go-ux/settings/service";
 import {OpenWindow as OpenTerminalWindow} from "../../bindings/go-ux/terminal/service";
 import {OpenWindow as OpenEditorWindow} from "../../bindings/go-ux/editors/service";
@@ -16,6 +16,7 @@ export function mountHub(root: HTMLElement) {
             <button class="btn" id="info-btn">Show Info Dialog</button>
             <button class="btn" id="error-btn">Show Error Dialog</button>
             <button class="btn" id="custom-btn">Show Custom Dialog</button>
+            <button class="btn" id="imagegrid-btn">Show Image Grid Dialog</button>
             <button class="btn" id="settings-btn">Open Settings</button>
             <button class="btn" id="terminal-btn">Open Terminal</button>
             <button class="btn" id="editor-btn">Open Editor</button>
@@ -46,6 +47,25 @@ export function mountHub(root: HTMLElement) {
         if (result) {
             ShowInfo("Result", JSON.stringify(result));
         }
+    });
+
+    (root.querySelector("#imagegrid-btn") as HTMLButtonElement).addEventListener("click", async () => {
+        // Two 8x8 solid-color PNGs — this button only exercises the
+        // ShowImageGrid wiring (spec round-trip, click-to-select,
+        // window-closing-cancels), not real artwork.
+        const red = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAWSURBVChTYzhgqf0fH2ZAF0DHw0MBAHJCiMF37vwEAAAAAElFTkSuQmCC";
+        const blue = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAWSURBVChTY9Bs2PkfH2ZAF0DHw0MBAC86mEFg9+y2AAAAAElFTkSuQmCC";
+        const key = await ShowImageGrid({
+            Title: "Choose an image",
+            Selected: "red",
+            Width: 420,
+            Height: 300,
+            Options: [
+                {Key: "red", ImageData: red},
+                {Key: "blue", ImageData: blue},
+            ],
+        });
+        ShowInfo("Result", key || "(cancelled)");
     });
 
     (root.querySelector("#settings-btn") as HTMLButtonElement).addEventListener("click", () => {
