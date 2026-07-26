@@ -1,10 +1,10 @@
 # `treestate` package
 
-Import path: `go-ux/treestate`
+Import path: `github.com/dmongrel/go-ux/treestate`
 
 Persists a tree UI's expand/collapse state and selected node, live, reusable
-by any tree-based component backed by a `*go-ux/db.DB` — not tied to
-`go-ux/settings`, whose properties tree is simply its first consumer.
+by any tree-based component backed by a `*github.com/dmongrel/go-ux/db.DB` — not tied to
+`github.com/dmongrel/go-ux/settings`, whose properties tree is simply its first consumer.
 
 Unlike the original Fyne version (which took over a live `*widget.Tree`'s
 callback fields), there is no live Go-side tree widget in a Wails app to
@@ -42,7 +42,7 @@ There's no explicit `Save` call and no debounce.
 call) — there is no notion of "current tree shape" in this package, so a
 caller wanting to filter out stale UIDs (a persisted reference to a node
 that's since been removed) must do that itself before replaying the result
-— see `go-ux/settings.Service.InitialTreeState` for the pattern.
+— see `github.com/dmongrel/go-ux/settings.Service.InitialTreeState` for the pattern.
 
 ## Minimal usage
 

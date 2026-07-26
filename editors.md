@@ -1,6 +1,6 @@
 # `editors` package
 
-Import path: `go-ux/editors`
+Import path: `github.com/dmongrel/go-ux/editors`
 
 A Wails v3 `Service` backing a text-editor-with-tabs component — built for
 a novel-writing / prose-editing use case, plus a diff-review API surface an
@@ -89,7 +89,7 @@ has a `FilePath`. `CancelDiff` discards the proposal, `Text` untouched.
 
 `CurrentFontSettings`/`SetFontSettings` are per-`Service`-instance (matches
 the original design's "independent per Group instance," not
-`go-ux/terminal`'s single global value): `SetFontSettings` clamps, updates
+`github.com/dmongrel/go-ux/terminal`'s single global value): `SetFontSettings` clamps, updates
 the live value, broadcasts it via the `editors:font` event, and persists it
 to `database`'s Editors node.
 
@@ -116,7 +116,7 @@ app.OnShutdown(func() { svc.Close() })
 
 ```ts
 // hub.ts
-import {OpenWindow} from "../../bindings/go-ux/editors/service";
+import {OpenWindow} from "../../bindings/github.com/dmongrel/go-ux/editors/service";
 OpenWindow();
 ```
 

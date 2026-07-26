@@ -1,14 +1,14 @@
 # `settings` package
 
-Import path: `go-ux/settings`
+Import path: `github.com/dmongrel/go-ux/settings`
 
 A Wails v3 `Service` backing a settings control panel modeled on IntelliJ
 Community Edition's Settings dialog: a searchable, nested tree of categories
 and a generated properties form, OK/Cancel/Apply staging. It reads and writes
-its data through a `*go-ux/db.DB` (see `db.md`) — it never touches SQLite
+its data through a `*github.com/dmongrel/go-ux/db.DB` (see `db.md`) — it never touches SQLite
 directly. The tree and form are rendered by the frontend
 (`uxdemo/frontend/src/views/settings.ts`); `Service` only serves data and
-persists staged edits + tree state (`go-ux/treestate`) — see `CLAUDE.md`'s
+persists staged edits + tree state (`github.com/dmongrel/go-ux/treestate`) — see `CLAUDE.md`'s
 "Known limitation: frontend distribution".
 
 ## Public API (Go)
@@ -42,7 +42,7 @@ on every form-field change. `Apply` writes every staged edit (one
 discards it. Nothing is written to `db` until `Apply` runs.
 
 `InitialTreeState`/`SetExpanded`/`SetSelected` back the tree's expand/
-collapse + selection persistence via `go-ux/treestate` (see `treestate.md`)
+collapse + selection persistence via `github.com/dmongrel/go-ux/treestate` (see `treestate.md`)
 — `InitialTreeState` is pre-filtered against currently valid node IDs (a
 persisted UID from a node that no longer exists is silently dropped).
 
@@ -62,13 +62,13 @@ app.RegisterService(application.NewService(svc))
 
 ```ts
 // hub.ts
-import {OpenWindow} from "../../bindings/go-ux/settings/service";
+import {OpenWindow} from "../../bindings/github.com/dmongrel/go-ux/settings/service";
 OpenWindow();
 ```
 
 ## Data flow / formats
 
-Everything comes from `go-ux/db`; this package adds no new types beyond
+Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new types beyond
 `TreeState{Expanded []string; Selected string}`:
 
 - **Tree structure**: `db.Node{ID, ParentID, Description, SortOrder}`.
@@ -100,7 +100,7 @@ Clearing the search restores the persisted expand/collapse state.
 ## Own UI state
 
 The tree's own expand/collapse state and last-selected node are persisted
-via `go-ux/treestate`, keyed by `componentID + ".tree"` (`componentID` is
+via `github.com/dmongrel/go-ux/treestate`, keyed by `componentID + ".tree"` (`componentID` is
 hardcoded in `settings/service.go`), written live on every toggle/selection.
 Unlike the original Fyne `Window`, this package does not persist the
 *window's* own size/position — Wails' `WebviewWindowOptions` sets a fixed

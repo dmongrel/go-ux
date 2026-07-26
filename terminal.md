@@ -1,6 +1,6 @@
 # `terminal` package
 
-Import path: `go-ux/terminal`
+Import path: `github.com/dmongrel/go-ux/terminal`
 
 A Wails v3 `Service` backing a terminal emulator: one or more PTY-backed
 shell sessions (PowerShell, Git Bash, cmd.exe on Windows), rendered by the
@@ -94,7 +94,7 @@ app.OnShutdown(func() { svc.Close() })
 
 ```ts
 // hub.ts
-import {OpenWindow} from "../../bindings/go-ux/terminal/service";
+import {OpenWindow} from "../../bindings/github.com/dmongrel/go-ux/terminal/service";
 OpenWindow();
 ```
 

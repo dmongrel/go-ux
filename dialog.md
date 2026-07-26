@@ -1,6 +1,6 @@
 # `dialog` package
 
-Import path: `go-ux/dialog`
+Import path: `github.com/dmongrel/go-ux/dialog`
 
 A Wails v3 `Service` for modal dialogs: `ShowInfo`/`ShowError` use Wails'
 native `app.Dialog` API directly (no custom rendering); `ShowCustom` opens a
@@ -75,7 +75,7 @@ app.RegisterService(application.NewService(dialog.NewService(app)))
 
 ```ts
 // hub.ts or wherever
-import {ShowInfo, ShowCustom} from "../../bindings/go-ux/dialog/service";
+import {ShowInfo, ShowCustom} from "../../bindings/github.com/dmongrel/go-ux/dialog/service";
 
 ShowInfo("Info", "This is a native Wails info dialog.");
 

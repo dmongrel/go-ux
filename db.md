@@ -1,6 +1,6 @@
 # `db` package
 
-Import path: `go-ux/db`
+Import path: `github.com/dmongrel/go-ux/db`
 
 The general-purpose persistence layer for `go-ux` components. It owns all
 SQLite access (via the pure-Go, no-cgo driver in `internal/sqlite`) — no
@@ -10,7 +10,7 @@ process (the settings window, and any other window/dialog you add).
 
 It stores two independent kinds of data in the same SQLite file:
 
-1. The **settings registry** — used by `go-ux/settings` (see `settings.md`).
+1. The **settings registry** — used by `github.com/dmongrel/go-ux/settings` (see `settings.md`).
 2. **Per-component UI state** — an opaque blob store any `go-ux` window can
    use to remember things like its size, position, or last-used state. This
    is the part relevant if you're persisting a window's position/size.
@@ -111,13 +111,13 @@ screen WorkArea — so position is capturable the same way as size via this
 same UI-state mechanism; there's just no cross-platform *move event* to
 hook (`WindowDidMove` exists only on macOS), so live capture means polling
 `RelativePosition()` on a timer the same way you'd poll `Size()`, not a
-callback. Note this is not how `go-ux/settings` or `go-ux/treestate`
+callback. Note this is not how `github.com/dmongrel/go-ux/settings` or `github.com/dmongrel/go-ux/treestate`
 actually persist their own state today — see `settings.md`/`treestate.md`
 for what they use instead.
 
 ## The settings registry API (for reference)
 
-Used by `go-ux/settings`; documented fully in `settings.md`. Summary of the
+Used by `github.com/dmongrel/go-ux/settings`; documented fully in `settings.md`. Summary of the
 methods that touch it:
 
 ```go
@@ -132,7 +132,7 @@ func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, va
 (`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyFloat`/
 `PropertyEnum`), are exported from this package. Use `AddNode`/`AddProperty`
 to seed the registry before constructing a `settings.Service` — see
-`go-ux/test.SeedExample` for a working example.
+`github.com/dmongrel/go-ux/test.SeedExample` for a working example.
 
 ## Refreshing a property's choices: UpdatePropertyOptions
 
