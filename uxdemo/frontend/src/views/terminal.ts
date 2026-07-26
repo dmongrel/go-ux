@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import {Events} from "@wailsio/runtime";
 import {
     Start,
@@ -195,3 +198,4 @@ export function mountTerminal(root: HTMLElement) {
         await openTab(shells[0]?.Name ?? "");
     })();
 }
+

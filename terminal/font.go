@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package terminal
 
 import "github.com/dmongrel/go-ux/fontsettings"
@@ -73,3 +76,4 @@ func registerFontListenerFunc(fn func(FontSettings)) (unregister func()) {
 	registerFontListener(key, fn)
 	return func() { unregisterFontListener(key) }
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import (
@@ -166,3 +169,4 @@ func TestApplyEditorSettingsNoOpWhenNeverRegistered(t *testing.T) {
 		t.Errorf("fileWatchMode changed despite no registered settings: %q -> %q", beforeMode, s.fileWatchMode)
 	}
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package terminal
 
 import (
@@ -55,3 +58,4 @@ func TestClampFontSettings(t *testing.T) {
 		t.Errorf("ColumnWidth = %v, want 3.0 (clamped)", got2.ColumnWidth)
 	}
 }
+

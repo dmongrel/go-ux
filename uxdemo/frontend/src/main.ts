@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import {mountHub} from "./views/hub";
 import {mountDialog} from "./views/dialog";
 import {mountImageGrid} from "./views/imagegrid";
@@ -39,3 +42,4 @@ function route() {
 
 route();
 window.addEventListener("hashchange", route);
+

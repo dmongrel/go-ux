@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import { defineConfig } from "vite";
 import wails from "@wailsio/runtime/plugins/vite";
 
@@ -10,3 +13,4 @@ export default defineConfig({
   },
   plugins: [wails("./bindings")],
 });
+

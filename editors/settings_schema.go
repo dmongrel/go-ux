@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import (
@@ -124,3 +127,4 @@ func findRootNode(nodes []db.Node, description string) (db.Node, bool) {
 	}
 	return db.Node{}, false
 }
+

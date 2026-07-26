@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import (
@@ -103,3 +106,4 @@ func (s *Service) Close() {
 		s.watcher.Close()
 	}
 }
+

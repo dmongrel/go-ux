@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package db is the general-purpose persistence layer for go-ux components.
 // It owns all SQLite access; callers never talk to SQLite directly.
 //
@@ -280,4 +283,5 @@ func (d *DB) LoadUIState(componentID string) ([]byte, error) {
 	}
 	return blob, nil
 }
+
 

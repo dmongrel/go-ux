@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import "testing"
@@ -113,3 +116,4 @@ func TestMultipleListenersAllNotified(t *testing.T) {
 		t.Errorf("gotA=%q gotB=%q, want both %q", gotA, gotB, "world")
 	}
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import {GetImageGridSpec, SelectImage, CancelImageGrid} from "../../bindings/github.com/dmongrel/go-ux/dialog/service";
 import type {ImageGridSpec} from "../../bindings/github.com/dmongrel/go-ux/dialog/models";
 
@@ -80,3 +83,4 @@ function escapeHtml(s: string): string {
     div.textContent = s;
     return div.innerHTML;
 }
+

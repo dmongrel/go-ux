@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 // Tab is one open document's presence in one Pane: a title and a
@@ -38,3 +41,4 @@ func NewTab(id, title, filePath, text string) *Tab {
 		Doc:      NewDocument(text),
 	}
 }
+

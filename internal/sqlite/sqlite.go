@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package sqlite provides the pure-Go SQLite connection and schema used by the db package.
 package sqlite
 
@@ -63,3 +66,4 @@ func Open(path string) (*sql.DB, error) {
 
 	return conn, nil
 }
+

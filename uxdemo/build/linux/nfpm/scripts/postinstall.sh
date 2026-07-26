@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 jcaesar
+# SPDX-License-Identifier: MIT
+
 #!/bin/sh
 
 # Update desktop database for .desktop file changes
@@ -19,3 +22,4 @@ else
 fi
 
 exit 0
+

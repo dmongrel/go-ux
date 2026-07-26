@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import {
     ListNodes,
     AllProperties,
@@ -270,3 +273,4 @@ export function mountSettings(root: HTMLElement) {
         }
     })();
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package dialog
 
 import "testing"
@@ -189,3 +192,4 @@ func TestResolveIsIdempotent(t *testing.T) {
 		t.Fatalf("result = %v, want the first resolution to win", got)
 	}
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import (
@@ -431,3 +434,4 @@ func (s *Service) OpenWindow() {
 }
 
 var errUnknownTab = errors.New("editors: unknown tab id")
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package settings_test
 
 import (
@@ -182,3 +185,4 @@ func TestInitialTreeStateFiltersStaleSelection(t *testing.T) {
 func formatID(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
+

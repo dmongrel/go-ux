@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package terminal
 
 import (
@@ -392,3 +395,4 @@ func TestRegisterSettingsSeedsAll22Rows(t *testing.T) {
 		}
 	}
 }
+

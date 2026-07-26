@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package terminal
 
 // ptySession is one running shell process attached to a pseudo-console. The
@@ -26,3 +29,4 @@ type ptySession interface {
 	// status as an error (nil for a clean/zero exit).
 	Wait() error
 }
+

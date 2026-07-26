@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 //go:build windows
 
 package fontsettings
@@ -51,3 +54,4 @@ func TestFontDisplayNameStripsSuffix(t *testing.T) {
 		t.Errorf("FontDisplayName(%q) = %q, want %q (no suffix to strip)", "Segoe UI", got, "Segoe UI")
 	}
 }
+

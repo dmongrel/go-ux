@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import (
@@ -296,3 +299,4 @@ func TestSetFontSettingsPersistsWhenEditorsNodeExists(t *testing.T) {
 		t.Fatal("Editors node not found after SetFontSettings")
 	}
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 //go:build windows
 
 package fontsettings
@@ -151,3 +154,4 @@ func isMonospaceFontFile(path string) bool {
 	}
 	return true
 }
+

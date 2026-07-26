@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package test holds fixtures for go-ux's own test suite: an in-memory SQLite
 // db.DB plus example data seeding. It is internal to this repo, not exported
 // for consumers of the ux library, and is unrelated to the internal/sqlite
@@ -50,3 +53,4 @@ func SeedExample(d *db.DB) error {
 
 	return nil
 }
+

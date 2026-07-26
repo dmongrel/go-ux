@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package dialog is a Wails v3 replacement for go-ux's Fyne modal
 // dialogs: native Info/Error dialogs via Wails' own app.Dialog API, plus a
 // windowed Custom dialog (the arbitrary label+input property form the old
@@ -323,3 +326,4 @@ func (s *Service) resolve(id string, result map[string]any) {
 		ch <- result
 	}
 }
+

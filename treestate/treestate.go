@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package treestate persists a tree UI's expand/collapse state and
 // selected node, live, reusable across any tree-based component backed by
 // a go-ux/db.DB. It is the persistence-wiring layer on top of db's already-
@@ -139,3 +142,4 @@ func (t *Tracker) load() {
 	}
 	t.selected = s.Selected
 }
+

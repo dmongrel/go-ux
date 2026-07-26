@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package treestate_test
 
 import (
@@ -92,3 +95,4 @@ func TestDifferentIDsAreIndependent(t *testing.T) {
 		t.Errorf("tree.b saw tree.a's state: Expanded()=%v Selected()=%q", b.Expanded(), b.Selected())
 	}
 }
+

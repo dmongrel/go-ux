@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package terminal
 
 import (
@@ -99,3 +102,4 @@ func detectCmd(l lookup) (ShellDef, bool) {
 	}
 	return ShellDef{Name: "cmd.exe", Path: path}, true
 }
+

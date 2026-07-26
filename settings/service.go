@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package settings is the Wails v3 replacement for go-ux's Fyne settings
 // control panel: a tree of settings nodes and a generated properties form,
 // modeled on IntelliJ Community Edition's Settings dialog. Settings data
@@ -174,3 +177,4 @@ func (s *Service) OpenWindow() {
 		URL:              "/#settings",
 	})
 }
+

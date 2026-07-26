@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Command uxdemo is go-ux's manual/visual verification vehicle for its
 // Wails v3 components — the replacement for the four separate Fyne demos
 // this repo used to ship (test_settings.go, dialogdemo/, terminaldemo/,
@@ -83,3 +86,4 @@ func main() {
 		log.Fatal(err)
 	}
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package terminal
 
 import (
@@ -140,3 +143,4 @@ func TestDetectShellsWithComposesAllDetectors(t *testing.T) {
 		t.Error("Git Bash should not be present when it can't be detected")
 	}
 }
+

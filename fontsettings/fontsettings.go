@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package fontsettings provides a shared, Ctrl+scroll-adjustable font
 // configuration mechanism, factored out of go-ux/terminal so go-ux/editors
 // can reuse the same clamping/listener plumbing without duplicating it.
@@ -131,3 +134,4 @@ func (s *State) RegisterListenerFunc(fn func(FontSettings)) (unregister func()) 
 	s.RegisterListener(key, fn)
 	return func() { s.UnregisterListener(key) }
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 //go:build windows
 
 package terminal
@@ -675,3 +678,4 @@ func commandLine(def ShellDef) string {
 func hasSpace(s string) bool {
 	return strings.Contains(s, " ")
 }
+

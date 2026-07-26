@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 // Document is the shared text buffer behind one or more Tabs — the "same
@@ -68,3 +71,4 @@ func (d *Document) RegisterListener(key any, fn func(text string)) {
 func (d *Document) UnregisterListener(key any) {
 	delete(d.listeners, key)
 }
+

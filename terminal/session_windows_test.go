@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 //go:build windows
 
 package terminal
@@ -342,3 +345,4 @@ func TestPtySessionResize(t *testing.T) {
 		t.Errorf("Resize: %v", err)
 	}
 }
+

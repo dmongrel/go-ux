@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 // Package terminal is a Wails v3 replacement for go-ux's Fyne-based
 // embeddable, tabbed, PTY-backed terminal widget: Git Bash, PowerShell, and
 // cmd.exe on Windows to start. It spawns real OS processes through a
@@ -12,3 +15,4 @@
 // session.go, winpty_windows.go, and service.go for the actual
 // implementation.
 package terminal
+

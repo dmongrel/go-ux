@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import {ShowInfo, ShowError, ShowCustom, ShowImageGrid, PickFile} from "../../bindings/github.com/dmongrel/go-ux/dialog/service";
 import {OpenWindow as OpenSettingsWindow} from "../../bindings/github.com/dmongrel/go-ux/settings/service";
 import {OpenWindow as OpenTerminalWindow} from "../../bindings/github.com/dmongrel/go-ux/terminal/service";
@@ -85,3 +88,4 @@ export function mountHub(root: HTMLElement) {
         ShowInfo("Picked File", path || "(cancelled)");
     });
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 import {
     ListTabs,
     NewTab,
@@ -974,3 +977,4 @@ function isSplittable(root: TreeNode, pane: Pane, axis: Axis): boolean {
         }
     })();
 }
+

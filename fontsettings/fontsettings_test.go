@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package fontsettings
 
 import (
@@ -97,3 +100,4 @@ func TestSetWithSameValueStillNotifies(t *testing.T) {
 		t.Errorf("listener did not fire for a Set with the same value")
 	}
 }
+

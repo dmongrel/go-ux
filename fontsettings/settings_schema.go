@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package fontsettings
 
 import (
@@ -90,3 +93,4 @@ func ReadFontProperties(props []db.Property, defaults FontSettings) FontSettings
 	}
 	return ClampFontSettings(font)
 }
+

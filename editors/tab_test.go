@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package editors
 
 import "testing"
@@ -21,3 +24,4 @@ func TestNewTabSetsFields(t *testing.T) {
 		t.Errorf("Dirty() = true, want false for a freshly created tab")
 	}
 }
+

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 jcaesar
+// SPDX-License-Identifier: MIT
+
 package db_test
 
 import (
@@ -277,4 +280,5 @@ func TestOnPropertiesChangedOnlyFiresForItsOwnNode(t *testing.T) {
 		t.Error("nodeA's callback fired for a write to nodeB")
 	}
 }
+
 
