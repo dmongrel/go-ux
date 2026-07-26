@@ -1,5 +1,5 @@
-import {GetSpec, Submit, CancelDialog} from "../../bindings/go-ux/dialog/service";
-import type {CustomDialogSpec, Property} from "../../bindings/go-ux/dialog/models";
+import {GetSpec, Submit, CancelDialog} from "../../bindings/github.com/dmongrel/go-ux/dialog/service";
+import type {CustomDialogSpec, Property} from "../../bindings/github.com/dmongrel/go-ux/dialog/models";
 
 // mountDialog is the Wails-side counterpart to go-ux/dialog.Service's
 // ShowCustom: it renders whatever CustomDialogSpec that call registered

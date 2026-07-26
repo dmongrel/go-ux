@@ -13,10 +13,10 @@ import {
     SetFontSettings,
     SaveLayout,
     LoadLayout,
-} from "../../bindings/go-ux/editors/service";
-import type {LayoutNode} from "../../bindings/go-ux/editors/models";
-import type {TabInfo} from "../../bindings/go-ux/editors/models";
-import type {FontSettings} from "../../bindings/go-ux/fontsettings/models";
+} from "../../bindings/github.com/dmongrel/go-ux/editors/service";
+import type {LayoutNode} from "../../bindings/github.com/dmongrel/go-ux/editors/models";
+import type {TabInfo} from "../../bindings/github.com/dmongrel/go-ux/editors/models";
+import type {FontSettings} from "../../bindings/github.com/dmongrel/go-ux/fontsettings/models";
 import {Events} from "@wailsio/runtime";
 
 import {EditorView, basicSetup} from "codemirror";

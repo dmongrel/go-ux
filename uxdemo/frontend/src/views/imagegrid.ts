@@ -1,5 +1,5 @@
-import {GetImageGridSpec, SelectImage, CancelImageGrid} from "../../bindings/go-ux/dialog/service";
-import type {ImageGridSpec} from "../../bindings/go-ux/dialog/models";
+import {GetImageGridSpec, SelectImage, CancelImageGrid} from "../../bindings/github.com/dmongrel/go-ux/dialog/service";
+import type {ImageGridSpec} from "../../bindings/github.com/dmongrel/go-ux/dialog/models";
 
 // mountImageGrid is the Wails-side counterpart to go-ux/dialog.Service's
 // ShowImageGrid: it renders whatever ImageGridSpec that call registered

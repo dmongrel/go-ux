@@ -1,7 +1,7 @@
-import {ShowInfo, ShowError, ShowCustom, ShowImageGrid, PickFile} from "../../bindings/go-ux/dialog/service";
-import {OpenWindow as OpenSettingsWindow} from "../../bindings/go-ux/settings/service";
-import {OpenWindow as OpenTerminalWindow} from "../../bindings/go-ux/terminal/service";
-import {OpenWindow as OpenEditorWindow} from "../../bindings/go-ux/editors/service";
+import {ShowInfo, ShowError, ShowCustom, ShowImageGrid, PickFile} from "../../bindings/github.com/dmongrel/go-ux/dialog/service";
+import {OpenWindow as OpenSettingsWindow} from "../../bindings/github.com/dmongrel/go-ux/settings/service";
+import {OpenWindow as OpenTerminalWindow} from "../../bindings/github.com/dmongrel/go-ux/terminal/service";
+import {OpenWindow as OpenEditorWindow} from "../../bindings/github.com/dmongrel/go-ux/editors/service";
 
 // hub mirrors go-ux's old per-package Fyne demos (test_settings.go,
 // dialogdemo/, terminaldemo/, editorsdemo/), folded into the one runnable

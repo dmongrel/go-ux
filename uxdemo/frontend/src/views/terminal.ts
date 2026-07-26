@@ -8,8 +8,8 @@ import {
     CurrentFontSettings,
     SetFontSettings,
     CloseOnExit,
-} from "../../bindings/go-ux/terminal/service";
-import type {ShellDef, FontSettings} from "../../bindings/go-ux/terminal/models";
+} from "../../bindings/github.com/dmongrel/go-ux/terminal/service";
+import type {ShellDef, FontSettings} from "../../bindings/github.com/dmongrel/go-ux/terminal/models";
 
 import {Terminal} from "@xterm/xterm";
 import {FitAddon} from "@xterm/addon-fit";

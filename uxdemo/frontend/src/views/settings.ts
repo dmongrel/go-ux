@@ -7,9 +7,9 @@ import {
     InitialTreeState,
     SetExpanded,
     SetSelected,
-} from "../../bindings/go-ux/settings/service";
-import {PropertyType} from "../../bindings/go-ux/db/models";
-import type {Node as SettingsNode, Property} from "../../bindings/go-ux/db/models";
+} from "../../bindings/github.com/dmongrel/go-ux/settings/service";
+import {PropertyType} from "../../bindings/github.com/dmongrel/go-ux/db/models";
+import type {Node as SettingsNode, Property} from "../../bindings/github.com/dmongrel/go-ux/db/models";
 import {Window as ThisWindow} from "@wailsio/runtime";
 
 // mountSettings is the Wails/JS replacement for go-ux/settings.Window: a
