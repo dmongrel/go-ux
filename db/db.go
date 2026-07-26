@@ -215,6 +215,27 @@ func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, va
 	return nil
 }
 
+// RemoveProperty deletes a property from a node, for a setting an app has
+// retired. Seeding is one-time (callers guard it on the registry being
+// empty), so dropping a property from the seed only ever affects fresh
+// databases — every existing one keeps the row, and the settings window keeps
+// rendering the control, until something deletes it. Removing a key that
+// isn't there is not an error, so this is safe to call unconditionally on
+// every launch.
+//
+// Like UpdatePropertyOptions, it does not fire OnPropertiesChanged: this is a
+// definitional change (which settings exist), not a user-edited value.
+func (d *DB) RemoveProperty(nodeID int64, key string) error {
+	_, err := d.conn.Exec(
+		`DELETE FROM settings_properties WHERE node_id = ? AND key = ?`,
+		nodeID, key,
+	)
+	if err != nil {
+		return fmt.Errorf("db: remove property: %w", err)
+	}
+	return nil
+}
+
 // UpdatePropertyOptions replaces a property's EnumOptions without touching
 // its stored value — for properties whose valid choices can change between
 // launches (e.g. an OS voice/font list), unlike SaveProperties which only
