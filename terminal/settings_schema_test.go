@@ -3,7 +3,7 @@ package terminal
 import (
 	"testing"
 
-	"go-ux/db"
+	"github.com/dmongrel/go-ux/db"
 )
 
 // newTestDB opens an in-memory db.DB for this file's tests. terminal can't

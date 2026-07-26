@@ -8,7 +8,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"go-ux/db"
+	"github.com/dmongrel/go-ux/db"
 )
 
 var (

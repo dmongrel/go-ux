@@ -1,8 +1,8 @@
 package terminal
 
 import (
-	"go-ux/db"
-	"go-ux/fontsettings"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/fontsettings"
 )
 
 // terminalSettingsLabel is the settings-tree node description for this

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"go-ux/internal/sqlite"
+	"github.com/dmongrel/go-ux/internal/sqlite"
 )
 
 // PropertyType identifies how a Property's value should be interpreted and rendered.

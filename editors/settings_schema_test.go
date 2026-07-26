@@ -3,8 +3,8 @@ package editors
 import (
 	"testing"
 
-	"go-ux/fontsettings"
-	"go-ux/test"
+	"github.com/dmongrel/go-ux/fontsettings"
+	"github.com/dmongrel/go-ux/test"
 )
 
 func TestRegisterSettingsSeedsFontAndFileWatchMode(t *testing.T) {

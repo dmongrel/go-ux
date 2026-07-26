@@ -3,7 +3,7 @@ package terminal
 import (
 	"testing"
 
-	"go-ux/db"
+	"github.com/dmongrel/go-ux/db"
 )
 
 func TestWithDefaultFirstReordersShellList(t *testing.T) {

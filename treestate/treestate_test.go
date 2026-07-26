@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"go-ux/test"
-	"go-ux/treestate"
+	"github.com/dmongrel/go-ux/test"
+	"github.com/dmongrel/go-ux/treestate"
 )
 
 // TestSetAndReloadRoundTrip is the core round-trip: state saved by one

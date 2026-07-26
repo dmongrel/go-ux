@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"go-ux/db"
-	"go-ux/test"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/test"
 )
 
 func TestPropertyFloatRoundTrips(t *testing.T) {

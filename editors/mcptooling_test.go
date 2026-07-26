@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ux/fontsettings"
-	"go-ux/test"
+	"github.com/dmongrel/go-ux/fontsettings"
+	"github.com/dmongrel/go-ux/test"
 )
 
 func newTestService(t *testing.T) *Service {

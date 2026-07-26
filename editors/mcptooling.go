@@ -12,8 +12,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"go-ux/db"
-	"go-ux/fontsettings"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/fontsettings"
 )
 
 func init() {

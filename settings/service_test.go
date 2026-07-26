@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"go-ux/db"
-	"go-ux/settings"
-	"go-ux/test"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/settings"
+	"github.com/dmongrel/go-ux/test"
 )
 
 func newTestService(t *testing.T) (*settings.Service, *db.DB) {

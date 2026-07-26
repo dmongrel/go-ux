@@ -14,8 +14,8 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"go-ux/db"
-	"go-ux/treestate"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/treestate"
 )
 
 // componentID identifies this settings instance for tree-state persistence

@@ -4,7 +4,7 @@
 // implementation used by the real db package.
 package test
 
-import "go-ux/db"
+import "github.com/dmongrel/go-ux/db"
 
 // NewDB opens an in-memory db.DB for use in tests. Callers should Close it
 // when done.

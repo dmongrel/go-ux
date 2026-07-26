@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go-ux/db"
+	"github.com/dmongrel/go-ux/db"
 )
 
 // Property keys shared by every consumer's font settings node (terminal's

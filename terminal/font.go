@@ -1,6 +1,6 @@
 package terminal
 
-import "go-ux/fontsettings"
+import "github.com/dmongrel/go-ux/fontsettings"
 
 // FontSettings is the live, shared terminal font configuration: every open
 // session, across every open terminal window, renders against the same

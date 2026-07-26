@@ -20,7 +20,7 @@ import (
 	"log"
 	"sync"
 
-	"go-ux/db"
+	"github.com/dmongrel/go-ux/db"
 )
 
 // Tracker is a database-backed store for one tree instance's expand/

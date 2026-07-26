@@ -1,8 +1,8 @@
 package editors
 
 import (
-	"go-ux/db"
-	"go-ux/fontsettings"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/fontsettings"
 )
 
 // editorsSettingsLabel returns groupID's settings-tree root node

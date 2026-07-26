@@ -16,12 +16,12 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
-	"go-ux/db"
-	"go-ux/dialog"
-	"go-ux/editors"
-	"go-ux/settings"
-	"go-ux/terminal"
-	"go-ux/test"
+	"github.com/dmongrel/go-ux/db"
+	"github.com/dmongrel/go-ux/dialog"
+	"github.com/dmongrel/go-ux/editors"
+	"github.com/dmongrel/go-ux/settings"
+	"github.com/dmongrel/go-ux/terminal"
+	"github.com/dmongrel/go-ux/test"
 )
 
 //go:embed all:frontend/dist
