@@ -41,6 +41,69 @@ func TestPropertyFloatRoundTrips(t *testing.T) {
 	}
 }
 
+func TestPropertyReadOnlyRoundTrips(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "ReadOnly Test", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "build_id", "Build ID", db.PropertyReadOnly, "abc123", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if len(props) != 1 {
+		t.Fatalf("GetProperties: got %d properties, want 1", len(props))
+	}
+	if props[0].Type != db.PropertyReadOnly {
+		t.Errorf("Type = %q, want %q", props[0].Type, db.PropertyReadOnly)
+	}
+	if props[0].Value != "abc123" {
+		t.Errorf("Value = %q, want %q", props[0].Value, "abc123")
+	}
+}
+
+func TestPropertyCapabilityRoundTrips(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Capability Test", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "port", "Port", db.PropertyInt, "8080", nil, "min 1, max 65535"); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "name", "Name", db.PropertyString, "svc", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if len(props) != 2 {
+		t.Fatalf("GetProperties: got %d properties, want 2", len(props))
+	}
+	if props[0].Capability != "min 1, max 65535" {
+		t.Errorf("Capability = %q, want %q", props[0].Capability, "min 1, max 65535")
+	}
+	if props[1].Capability != "" {
+		t.Errorf("Capability = %q, want empty", props[1].Capability)
+	}
+}
+
 func TestSettingsRegistry(t *testing.T) {
 	d, err := test.NewDB()
 	if err != nil {

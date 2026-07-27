@@ -194,8 +194,11 @@ export function mountSettings(root: HTMLElement) {
             if (highlighted.has(prop.Key)) label.style.background = "#ffeb3b", label.style.color = "#000";
             row.appendChild(label);
 
-            let input: HTMLInputElement | HTMLSelectElement;
-            if (prop.Type === PropertyType.PropertyBool) {
+            let input: HTMLInputElement | HTMLSelectElement | HTMLSpanElement;
+            if (prop.Type === PropertyType.PropertyReadOnly) {
+                input = document.createElement("span");
+                input.textContent = prop.Value;
+            } else if (prop.Type === PropertyType.PropertyBool) {
                 input = document.createElement("input");
                 (input as HTMLInputElement).type = "checkbox";
                 (input as HTMLInputElement).checked = prop.Value === "true";
@@ -223,7 +226,18 @@ export function mountSettings(root: HTMLElement) {
                 });
             }
             input.className = "input";
-            row.appendChild(input);
+
+            const valueGroup = document.createElement("div");
+            valueGroup.className = "prop-value";
+            valueGroup.appendChild(input);
+            if (prop.Capability) {
+                const capability = document.createElement("span");
+                capability.className = "prop-capability";
+                capability.textContent = prop.Capability;
+                valueGroup.appendChild(capability);
+            }
+            row.appendChild(valueGroup);
+
             formEl.appendChild(row);
         }
     }

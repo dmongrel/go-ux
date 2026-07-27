@@ -22,11 +22,14 @@ import (
 type PropertyType string
 
 const (
-	PropertyBool   PropertyType = "bool"
-	PropertyString PropertyType = "string"
-	PropertyInt    PropertyType = "int"
-	PropertyEnum   PropertyType = "enum"
-	PropertyFloat  PropertyType = "float"
+	PropertyBool     PropertyType = "bool"
+	PropertyString   PropertyType = "string"
+	PropertyInt      PropertyType = "int"
+	PropertyEnum     PropertyType = "enum"
+	PropertyFloat    PropertyType = "float"
+	// PropertyReadOnly renders as a plain label:value pair — Label is the
+	// identifier, Value is the (non-editable) content. Not stageable.
+	PropertyReadOnly PropertyType = "readonly"
 )
 
 // Node is one entry in the settings tree.
@@ -44,6 +47,11 @@ type Property struct {
 	Type        PropertyType
 	Value       string
 	EnumOptions []string
+	// Capability is an optional trailing label rendered after the value
+	// control — for informing the user of a constraint on the value (e.g.
+	// "min 1, max 72") rather than encoding it in Label or Value. Empty
+	// means no trailing label is shown.
+	Capability string
 }
 
 // DB is a handle to the go-ux persistence store.
@@ -101,7 +109,7 @@ func (d *DB) ListSettings() ([]Node, error) {
 
 // GetProperties returns the properties page contents for the given node.
 func (d *DB) GetProperties(nodeID int64) ([]Property, error) {
-	rows, err := d.conn.Query(`SELECT key, label, type, value, enum_options FROM settings_properties WHERE node_id = ? ORDER BY id`, nodeID)
+	rows, err := d.conn.Query(`SELECT key, label, type, value, enum_options, capability FROM settings_properties WHERE node_id = ? ORDER BY id`, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("db: get properties: %w", err)
 	}
@@ -112,7 +120,7 @@ func (d *DB) GetProperties(nodeID int64) ([]Property, error) {
 		var p Property
 		var enumOptions string
 		var ptype string
-		if err := rows.Scan(&p.Key, &p.Label, &ptype, &p.Value, &enumOptions); err != nil {
+		if err := rows.Scan(&p.Key, &p.Label, &ptype, &p.Value, &enumOptions, &p.Capability); err != nil {
 			return nil, fmt.Errorf("db: get properties: %w", err)
 		}
 		p.Type = PropertyType(ptype)
@@ -206,11 +214,16 @@ func (d *DB) AddNode(parentID *int64, description string, sortOrder int) (int64,
 	return res.LastInsertId()
 }
 
-// AddProperty inserts a property on the given node.
-func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string) error {
+// AddProperty inserts a property on the given node. capability is optional
+// (at most one value is used) — see Property.Capability.
+func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error {
+	var capValue string
+	if len(capability) > 0 {
+		capValue = capability[0]
+	}
 	_, err := d.conn.Exec(
-		`INSERT INTO settings_properties (node_id, key, label, type, value, enum_options) VALUES (?, ?, ?, ?, ?, ?)`,
-		nodeID, key, label, string(ptype), value, strings.Join(enumOptions, ","),
+		`INSERT INTO settings_properties (node_id, key, label, type, value, enum_options, capability) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		nodeID, key, label, string(ptype), value, strings.Join(enumOptions, ","), capValue,
 	)
 	if err != nil {
 		return fmt.Errorf("db: add property: %w", err)

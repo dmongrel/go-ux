@@ -125,14 +125,26 @@ func (d *DB) ListSettings() ([]Node, error)
 func (d *DB) GetProperties(nodeID int64) ([]Property, error)
 func (d *DB) SaveProperties(nodeID int64, values map[string]string) error
 func (d *DB) AddNode(parentID *int64, description string, sortOrder int) (int64, error)
-func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string) error
+func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error
 ```
 
 `Node` and `Property` types, and the `PropertyType` enum
 (`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyFloat`/
-`PropertyEnum`), are exported from this package. Use `AddNode`/`AddProperty`
-to seed the registry before constructing a `settings.Service` — see
-`github.com/dmongrel/go-ux/test.SeedExample` for a working example.
+`PropertyEnum`/`PropertyReadOnly`), are exported from this package. Use
+`AddNode`/`AddProperty` to seed the registry before constructing a
+`settings.Service` — see `github.com/dmongrel/go-ux/test.SeedExample` for a
+working example.
+
+`PropertyReadOnly` renders as a plain label:value pair — `Label` is the
+identifier, `Value` is the non-editable content shown in place of an input
+control. Its value can't be staged/edited from the settings UI.
+
+`AddProperty`'s trailing `capability` parameter is optional (pass at most
+one string, or omit it) and sets `Property.Capability` — a short trailing
+label rendered after every property's value control, for informing the
+user of a constraint on the value (e.g. `"min 1, max 65535"`) without
+encoding it into `Label` or `Value`. Available on every `PropertyType`, not
+just `PropertyReadOnly`.
 
 ## Refreshing a property's choices: UpdatePropertyOptions
 

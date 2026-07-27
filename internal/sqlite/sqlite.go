@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS settings_properties (
 	type         TEXT NOT NULL,
 	value        TEXT NOT NULL DEFAULT '',
 	enum_options TEXT NOT NULL DEFAULT '',
+	capability   TEXT NOT NULL DEFAULT '',
 	UNIQUE(node_id, key)
 );
 
