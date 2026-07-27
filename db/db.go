@@ -22,11 +22,11 @@ import (
 type PropertyType string
 
 const (
-	PropertyBool     PropertyType = "bool"
-	PropertyString   PropertyType = "string"
-	PropertyInt      PropertyType = "int"
-	PropertyEnum     PropertyType = "enum"
-	PropertyFloat    PropertyType = "float"
+	PropertyBool   PropertyType = "bool"
+	PropertyString PropertyType = "string"
+	PropertyInt    PropertyType = "int"
+	PropertyEnum   PropertyType = "enum"
+	PropertyFloat  PropertyType = "float"
 	// PropertyReadOnly renders as a plain label:value pair — Label is the
 	// identifier, Value is the (non-editable) content. Not stageable.
 	PropertyReadOnly PropertyType = "readonly"
@@ -52,6 +52,13 @@ type Property struct {
 	// "min 1, max 72") rather than encoding it in Label or Value. Empty
 	// means no trailing label is shown.
 	Capability string
+	// Slider renders a PropertyInt with a slider spanning SliderMin..
+	// SliderMax alongside its usual number input — the user can still type
+	// an exact value, and the slider repositions to match. Set via
+	// SetPropertySlider; ignored for every PropertyType other than
+	// PropertyInt.
+	Slider               bool
+	SliderMin, SliderMax int
 }
 
 // DB is a handle to the go-ux persistence store.
@@ -109,7 +116,7 @@ func (d *DB) ListSettings() ([]Node, error) {
 
 // GetProperties returns the properties page contents for the given node.
 func (d *DB) GetProperties(nodeID int64) ([]Property, error) {
-	rows, err := d.conn.Query(`SELECT key, label, type, value, enum_options, capability FROM settings_properties WHERE node_id = ? ORDER BY id`, nodeID)
+	rows, err := d.conn.Query(`SELECT key, label, type, value, enum_options, capability, slider, slider_min, slider_max FROM settings_properties WHERE node_id = ? ORDER BY id`, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("db: get properties: %w", err)
 	}
@@ -120,10 +127,12 @@ func (d *DB) GetProperties(nodeID int64) ([]Property, error) {
 		var p Property
 		var enumOptions string
 		var ptype string
-		if err := rows.Scan(&p.Key, &p.Label, &ptype, &p.Value, &enumOptions, &p.Capability); err != nil {
+		var slider int
+		if err := rows.Scan(&p.Key, &p.Label, &ptype, &p.Value, &enumOptions, &p.Capability, &slider, &p.SliderMin, &p.SliderMax); err != nil {
 			return nil, fmt.Errorf("db: get properties: %w", err)
 		}
 		p.Type = PropertyType(ptype)
+		p.Slider = slider != 0
 		if enumOptions != "" {
 			p.EnumOptions = strings.Split(enumOptions, ",")
 		}
@@ -292,6 +301,30 @@ func (d *DB) UpdatePropertyOptions(nodeID int64, key string, enumOptions []strin
 	return nil
 }
 
+// SetPropertySlider marks an existing PropertyInt property as
+// slider-enabled, rendering a slider spanning min..max (inclusive)
+// alongside its existing number input — the user can still type an exact
+// value, and the slider repositions to match. Pass min == max == 0 to use
+// the default 0..100 range. Has no effect on any PropertyType other than
+// PropertyInt.
+//
+// Like UpdatePropertyOptions and RenameNode, it does not fire
+// OnPropertiesChanged: this is a definitional change (how the control is
+// rendered), not a user-edited value.
+func (d *DB) SetPropertySlider(nodeID int64, key string, min, max int) error {
+	if min == 0 && max == 0 {
+		min, max = 0, 100
+	}
+	_, err := d.conn.Exec(
+		`UPDATE settings_properties SET slider = 1, slider_min = ?, slider_max = ? WHERE node_id = ? AND key = ?`,
+		min, max, nodeID, key,
+	)
+	if err != nil {
+		return fmt.Errorf("db: set property slider: %w", err)
+	}
+	return nil
+}
+
 // SaveUIState writes the opaque UI-state blob for the given component, live
 // (immediately), overwriting any prior state.
 func (d *DB) SaveUIState(componentID string, blob []byte) error {
@@ -319,5 +352,3 @@ func (d *DB) LoadUIState(componentID string) ([]byte, error) {
 	}
 	return blob, nil
 }
-
-

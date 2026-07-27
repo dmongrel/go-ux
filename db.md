@@ -175,6 +175,21 @@ Calling it with a `key` that changed a previously-selected value out of the
 new option set is not itself validated — the stale value stays until the
 user picks a new one via the settings UI.
 
+## Rendering a PropertyInt as a slider: SetPropertySlider
+
+```go
+func (d *DB) SetPropertySlider(nodeID int64, key string, min, max int) error
+```
+
+By default a `PropertyInt` renders as a plain number input. Call
+`SetPropertySlider` after `AddProperty` to additionally render a slider
+spanning `min..max` (inclusive) alongside it — the user can still type an
+exact value into the number input, and the slider repositions to match.
+Pass `min == max == 0` to use the default `0..100` range. Has no effect on
+any `PropertyType` other than `PropertyInt`. Like `UpdatePropertyOptions`
+and `RenameNode`, it does not fire `OnPropertiesChanged` (it changes how
+the control is rendered, not the stored value) and does not touch `Value`.
+
 ## Constraints for callers
 
 - Don't open the SQLite file this package manages with any other SQLite

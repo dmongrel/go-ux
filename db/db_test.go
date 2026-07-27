@@ -581,4 +581,104 @@ func TestGetPropertiesSucceedsOnLegacyDatabaseMissingCapabilityColumn(t *testing
 	}
 }
 
+func TestSetPropertySliderRoundTrips(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Server", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "port", "Port", db.PropertyInt, "8080", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties before SetPropertySlider: %v", err)
+	}
+	if props[0].Slider {
+		t.Errorf("Slider = true before SetPropertySlider, want false")
+	}
+
+	if err := d.SetPropertySlider(nodeID, "port", 1, 65535); err != nil {
+		t.Fatalf("SetPropertySlider: %v", err)
+	}
+
+	props, err = d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties after SetPropertySlider: %v", err)
+	}
+	if !props[0].Slider {
+		t.Error("Slider = false after SetPropertySlider, want true")
+	}
+	if props[0].SliderMin != 1 || props[0].SliderMax != 65535 {
+		t.Errorf("SliderMin/SliderMax = %d/%d, want 1/65535", props[0].SliderMin, props[0].SliderMax)
+	}
+	if props[0].Value != "8080" {
+		t.Errorf("Value = %q, want %q (SetPropertySlider must not touch it)", props[0].Value, "8080")
+	}
+}
+
+func TestSetPropertySliderDefaultsRangeWhenMinMaxBothZero(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Server", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "volume", "Volume", db.PropertyInt, "50", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	if err := d.SetPropertySlider(nodeID, "volume", 0, 0); err != nil {
+		t.Fatalf("SetPropertySlider: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if !props[0].Slider {
+		t.Error("Slider = false, want true")
+	}
+	if props[0].SliderMin != 0 || props[0].SliderMax != 100 {
+		t.Errorf("SliderMin/SliderMax = %d/%d, want 0/100 default", props[0].SliderMin, props[0].SliderMax)
+	}
+}
+
+func TestSetPropertySliderDoesNotFireOnPropertiesChanged(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Server", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "port", "Port", db.PropertyInt, "8080", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	fired := false
+	unsubscribe := d.OnPropertiesChanged(nodeID, func(map[string]string) { fired = true })
+	defer unsubscribe()
+
+	if err := d.SetPropertySlider(nodeID, "port", 0, 100); err != nil {
+		t.Fatalf("SetPropertySlider: %v", err)
+	}
+	if fired {
+		t.Error("SetPropertySlider fired OnPropertiesChanged, want it not to")
+	}
+}
+
 

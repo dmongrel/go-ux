@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS settings_properties (
 	value        TEXT NOT NULL DEFAULT '',
 	enum_options TEXT NOT NULL DEFAULT '',
 	capability   TEXT NOT NULL DEFAULT '',
+	slider       INTEGER NOT NULL DEFAULT 0,
+	slider_min   INTEGER NOT NULL DEFAULT 0,
+	slider_max   INTEGER NOT NULL DEFAULT 0,
 	UNIQUE(node_id, key)
 );
 
@@ -54,6 +57,9 @@ CREATE TABLE IF NOT EXISTS ui_state (
 var additive = []struct{ table, column, ddl string }{
 	{"settings_properties", "enum_options", "TEXT NOT NULL DEFAULT ''"},
 	{"settings_properties", "capability", "TEXT NOT NULL DEFAULT ''"},
+	{"settings_properties", "slider", "INTEGER NOT NULL DEFAULT 0"},
+	{"settings_properties", "slider_min", "INTEGER NOT NULL DEFAULT 0"},
+	{"settings_properties", "slider_max", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 // applyAdditive brings every table in additive up to its current column set.
@@ -133,4 +139,3 @@ func Open(path string) (*sql.DB, error) {
 
 	return conn, nil
 }
-

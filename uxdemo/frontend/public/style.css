@@ -161,6 +161,10 @@ html, body, #root {
     color: #9a9a9a;
 }
 
+.prop-slider {
+    width: 160px;
+}
+
 /* --- Editor --- */
 
 .editor-view {

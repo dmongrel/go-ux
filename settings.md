@@ -75,14 +75,14 @@ Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new t
   `ParentID == nil` means a root-level node. Nesting is arbitrary depth
   (adjacency list) — the frontend renders indentation by walking
   `ParentID` chains.
-- **Properties page**: `db.Property{Key, Label, Type, Value, EnumOptions, Capability}`.
+- **Properties page**: `db.Property{Key, Label, Type, Value, EnumOptions, Capability, Slider, SliderMin, SliderMax}`.
   `Type` drives which frontend control is generated:
 
   | `db.PropertyType` | Control            | `Value` encoding                          |
   |--------------------|--------------------|--------------------------------------------|
   | `PropertyBool`     | checkbox           | the literal string `"true"` or `"false"`   |
   | `PropertyString`   | text input         | raw string, unconstrained                  |
-  | `PropertyInt`      | number input       | base-10 integer string                     |
+  | `PropertyInt`      | number input (+ slider if `Slider`) | base-10 integer string    |
   | `PropertyFloat`    | number input       | decimal string                             |
   | `PropertyEnum`     | select             | one of the strings in `EnumOptions`        |
   | `PropertyReadOnly` | plain text, no input | raw string, not editable/stageable      |
@@ -92,6 +92,13 @@ Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new t
   (e.g. a min/max range) without folding it into `Label`. Optional on every
   property type, set via `AddProperty`'s trailing `capability` parameter
   (see `db.md`).
+
+  `Slider`, when true on a `PropertyInt`, additionally renders a slider
+  spanning `SliderMin..SliderMax` alongside the number input — typing in
+  the number input repositions the slider, and dragging the slider both
+  updates the number input and stages the value live. Set via
+  `db.SetPropertySlider` (see `db.md`); no effect on any other
+  `PropertyType`.
 
 ## Search / filtering behavior
 

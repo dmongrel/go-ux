@@ -31,6 +31,9 @@ func SeedExample(d *db.DB) error {
 	if err := d.AddProperty(terminalID, "tab_width", "Tab width", db.PropertyInt, "4", nil); err != nil {
 		return err
 	}
+	if err := d.SetPropertySlider(terminalID, "tab_width", 1, 16); err != nil {
+		return err
+	}
 
 	vcsID, err := d.AddNode(nil, "Version Control", 1)
 	if err != nil {

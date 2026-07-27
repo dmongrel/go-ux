@@ -229,6 +229,27 @@ export function mountSettings(root: HTMLElement) {
 
             const valueGroup = document.createElement("div");
             valueGroup.className = "prop-value";
+
+            if (prop.Type === PropertyType.PropertyInt && prop.Slider) {
+                const numberInput = input as HTMLInputElement;
+                const slider = document.createElement("input");
+                slider.type = "range";
+                slider.className = "prop-slider";
+                slider.min = String(prop.SliderMin);
+                slider.max = String(prop.SliderMax);
+                slider.value = numberInput.value;
+
+                slider.addEventListener("input", () => {
+                    numberInput.value = slider.value;
+                    StageProperty(nodeID, prop.Key, slider.value);
+                });
+                numberInput.addEventListener("input", () => {
+                    if (numberInput.value !== "") slider.value = numberInput.value;
+                });
+
+                valueGroup.appendChild(slider);
+            }
+
             valueGroup.appendChild(input);
             if (prop.Capability) {
                 const capability = document.createElement("span");
