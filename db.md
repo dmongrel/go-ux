@@ -28,6 +28,17 @@ defer database.Close()
 `Open` is idempotent — safe to call against an existing file; it only
 creates tables that don't already exist (`CREATE TABLE IF NOT EXISTS`).
 
+For a file database, `Open` also sets a 5-second `busy_timeout` and
+`journal_mode = WAL` on every connection it opens (skipped for `:memory:`,
+where both are meaningless). Without a busy timeout, a second OS process —
+not just a second connection within the same process — touching the same
+database file fails immediately with `SQLITE_BUSY` ("database is locked")
+on any contended read or write, rather than waiting the usual few
+milliseconds for the other process's lock to clear. This is orthogonal to
+`SetMaxOpenConns(1)`, which only solves *intra*-process contention; the
+file lock a second process holds is invisible to this process's own
+connection pool.
+
 ## Saving a window's position/size: the UI-state API
 
 ```go

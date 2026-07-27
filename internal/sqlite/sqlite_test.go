@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func columnNames(t *testing.T, conn *sql.DB, table string) map[string]bool {
@@ -195,5 +196,149 @@ func TestOpenAddsSliderColumnsToDatabasePredatingThem(t *testing.T) {
 	}
 	if slider != 0 || sliderMin != 0 || sliderMax != 0 {
 		t.Errorf("slider/slider_min/slider_max = %d/%d/%d, want 0/0/0", slider, sliderMin, sliderMax)
+	}
+}
+
+func TestOpenSetsBusyTimeoutOnFileDatabase(t *testing.T) {
+	conn, err := Open(filepath.Join(t.TempDir(), "busy.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+
+	var ms int
+	if err := conn.QueryRow(`PRAGMA busy_timeout`).Scan(&ms); err != nil {
+		t.Fatalf("PRAGMA busy_timeout: %v", err)
+	}
+	if ms != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", ms)
+	}
+}
+
+func TestOpenSetsWALJournalModeOnFileDatabase(t *testing.T) {
+	conn, err := Open(filepath.Join(t.TempDir(), "wal.sqlite"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+
+	var mode string
+	if err := conn.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatalf("PRAGMA journal_mode: %v", err)
+	}
+	if mode != "wal" {
+		t.Errorf("journal_mode = %q, want %q", mode, "wal")
+	}
+}
+
+func TestOpenMemoryDatabaseUnaffectedByJournalPragma(t *testing.T) {
+	conn, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer conn.Close()
+
+	// journal_mode(WAL) is deliberately skipped for ":memory:" — WAL is
+	// meaningless for an in-memory database. It should still be running
+	// the schema and still have a busy_timeout (harmless, even if moot
+	// with a single connection to a private in-memory database).
+	if _, err := conn.Exec(`SELECT 1 FROM settings_nodes LIMIT 1`); err != nil {
+		t.Errorf("schema not applied to in-memory database: %v", err)
+	}
+
+	var mode string
+	if err := conn.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatalf("PRAGMA journal_mode: %v", err)
+	}
+	if mode == "wal" {
+		t.Errorf("journal_mode = %q, want anything but wal for :memory:", mode)
+	}
+
+	var ms int
+	if err := conn.QueryRow(`PRAGMA busy_timeout`).Scan(&ms); err != nil {
+		t.Fatalf("PRAGMA busy_timeout: %v", err)
+	}
+	if ms != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", ms)
+	}
+}
+
+func TestOpenWindowsStylePathWithBackslashesAndDriveLetter(t *testing.T) {
+	// filepath.Join on Windows already yields a backslash-separated,
+	// drive-lettered path (e.g. C:\Users\...\AppData\Local\Temp\...) — the
+	// exact shape the DSN conversion exists to survive, since a "file:"
+	// URI would otherwise require forward slashes.
+	path := filepath.Join(t.TempDir(), "windows.sqlite")
+
+	conn, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open(%q): %v", path, err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.Exec(`SELECT 1 FROM settings_nodes LIMIT 1`); err != nil {
+		t.Errorf("schema not applied: %v", err)
+	}
+
+	var ms int
+	if err := conn.QueryRow(`PRAGMA busy_timeout`).Scan(&ms); err != nil {
+		t.Fatalf("PRAGMA busy_timeout: %v", err)
+	}
+	if ms != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", ms)
+	}
+
+	var mode string
+	if err := conn.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatalf("PRAGMA journal_mode: %v", err)
+	}
+	if mode != "wal" {
+		t.Errorf("journal_mode = %q, want %q", mode, "wal")
+	}
+}
+
+// TestOpenSetsBusyTimeoutSoConcurrentWriteWaitsInsteadOfFailing is the
+// regression guard: without a busy timeout, a write from a second
+// connection while a first connection holds the write lock fails
+// immediately with SQLITE_BUSY ("database is locked") rather than waiting
+// a moment for the lock to clear. WAL mode alone would not catch this —
+// WAL only stops writers from blocking readers, not writers from blocking
+// other writers — so this deliberately exercises writer-vs-writer
+// contention, not the reader-vs-writer case WAL already fixes for free.
+func TestOpenSetsBusyTimeoutSoConcurrentWriteWaitsInsteadOfFailing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "contention.sqlite")
+
+	conn1, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open conn1: %v", err)
+	}
+	defer conn1.Close()
+
+	conn2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open conn2: %v", err)
+	}
+	defer conn2.Close()
+
+	tx, err := conn1.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO settings_nodes (parent_id, description, sort_order) VALUES (NULL, 'A', 0)`); err != nil {
+		t.Fatalf("insert in tx: %v", err)
+	}
+
+	commitErr := make(chan error, 1)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		commitErr <- tx.Commit()
+	}()
+
+	if _, err := conn2.Exec(`INSERT INTO settings_nodes (parent_id, description, sort_order) VALUES (NULL, 'B', 0)`); err != nil {
+		t.Fatalf("conn2 write while conn1 holds the write lock: %v", err)
+	}
+
+	if err := <-commitErr; err != nil {
+		t.Fatalf("commit: %v", err)
 	}
 }

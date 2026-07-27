@@ -106,10 +106,39 @@ func applyAdditive(conn *sql.DB) error {
 	return nil
 }
 
+// dsn appends modernc.org/sqlite's _pragma DSN parameters to path so every
+// physical connection the pool ever opens gets them — busy_timeout is a
+// per-connection setting, not stored in the file, so setting it with a
+// one-off Exec after Open would silently stop applying the moment the pool
+// discarded and reopened its connection (e.g. after a bad-connection
+// error). Without a busy timeout, a second OS process (not just a second
+// connection in this process — SetMaxOpenConns(1) only solves that half)
+// touching the same database file gets an immediate SQLITE_BUSY on any
+// contended read or write instead of waiting the usual few milliseconds
+// for the lock to clear.
+//
+// journal_mode(WAL) is skipped for ":memory:" — WAL is meaningless for an
+// in-memory database — and is otherwise set alongside busy_timeout so
+// readers stop blocking on a writer in the first place, rather than merely
+// surviving the wait.
+//
+// path is passed through unprefixed (no "file:" URI wrapping): the driver
+// only interprets a DSN as a URI when it's prefixed with "file:", so an
+// ordinary path — including a Windows path with backslashes and a drive
+// letter — is opened exactly as before, with the query string stripped off
+// before being handed to SQLite and applied separately as pragmas.
+func dsn(path string) string {
+	d := path + "?_pragma=busy_timeout(5000)"
+	if path != ":memory:" {
+		d += "&_pragma=journal_mode(WAL)"
+	}
+	return d
+}
+
 // Open opens (creating if necessary) the SQLite database at path and applies the schema.
 // path may be ":memory:" for an in-memory database.
 func Open(path string) (*sql.DB, error) {
-	conn, err := sql.Open("sqlite", path)
+	conn, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open: %w", err)
 	}
