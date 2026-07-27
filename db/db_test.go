@@ -4,6 +4,8 @@
 package db_test
 
 import (
+	"database/sql"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
@@ -512,6 +514,70 @@ func TestRenameNodeAllowsDuplicateDescription(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("got %d nodes named %q, want 2", count, "Q4_K_S")
+	}
+}
+
+// TestGetPropertiesSucceedsOnLegacyDatabaseMissingCapabilityColumn reproduces
+// the reported failure: a database file created before the `capability`
+// column existed used to make every GetProperties call fail with "no such
+// column: capability", because CREATE TABLE IF NOT EXISTS is a no-op against
+// a table that already exists. db.Open (via internal/sqlite) must bring such
+// a file up to the current schema before returning.
+func TestGetPropertiesSucceedsOnLegacyDatabaseMissingCapabilityColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.sqlite")
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := raw.Exec(`
+		CREATE TABLE settings_nodes (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			parent_id   INTEGER NULL REFERENCES settings_nodes(id),
+			description TEXT NOT NULL,
+			sort_order  INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE settings_properties (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			node_id      INTEGER NOT NULL REFERENCES settings_nodes(id),
+			key          TEXT NOT NULL,
+			label        TEXT NOT NULL,
+			type         TEXT NOT NULL,
+			value        TEXT NOT NULL DEFAULT '',
+			enum_options TEXT NOT NULL DEFAULT '',
+			UNIQUE(node_id, key)
+		);
+	`); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO settings_nodes (id, parent_id, description, sort_order) VALUES (1, NULL, 'Server', 0)`); err != nil {
+		t.Fatalf("seed node: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO settings_properties (node_id, key, label, type, value, enum_options) VALUES (1, 'port', 'Port', 'int', '8080', '')`); err != nil {
+		t.Fatalf("seed property: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	d, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("Open legacy database: %v", err)
+	}
+	defer d.Close()
+
+	props, err := d.GetProperties(1)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if len(props) != 1 {
+		t.Fatalf("GetProperties: got %d properties, want 1", len(props))
+	}
+	if props[0].Key != "port" || props[0].Label != "Port" || props[0].Type != db.PropertyInt || props[0].Value != "8080" {
+		t.Errorf("got %+v, want key=port label=Port type=int value=8080", props[0])
+	}
+	if props[0].Capability != "" {
+		t.Errorf("Capability = %q, want empty", props[0].Capability)
 	}
 }
 
