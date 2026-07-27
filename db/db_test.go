@@ -147,8 +147,8 @@ func TestSettingsRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProperties: %v", err)
 	}
-	if len(props) != 3 {
-		t.Fatalf("GetProperties(Terminal): got %d properties, want 3", len(props))
+	if len(props) != 4 {
+		t.Fatalf("GetProperties(Terminal): got %d properties, want 4", len(props))
 	}
 
 	if err := d.SaveProperties(terminalID, map[string]string{"tab_width": "8"}); err != nil {

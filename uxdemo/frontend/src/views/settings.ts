@@ -198,6 +198,7 @@ export function mountSettings(root: HTMLElement) {
             if (prop.Type === PropertyType.PropertyReadOnly) {
                 input = document.createElement("span");
                 input.textContent = prop.Value;
+                input.className = "prop-readonly-value";
             } else if (prop.Type === PropertyType.PropertyBool) {
                 input = document.createElement("input");
                 (input as HTMLInputElement).type = "checkbox";
@@ -225,7 +226,7 @@ export function mountSettings(root: HTMLElement) {
                     StageProperty(nodeID, prop.Key, (input as HTMLInputElement).value);
                 });
             }
-            input.className = "input";
+            if (prop.Type !== PropertyType.PropertyReadOnly) input.className = "input";
 
             const valueGroup = document.createElement("div");
             valueGroup.className = "prop-value";
