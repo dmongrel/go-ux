@@ -246,6 +246,83 @@ func (d *DB) RenameNode(nodeID int64, description string) error {
 	return nil
 }
 
+// RemoveNode deletes a node, every node beneath it, and all of their
+// properties, for a settings group an app has retired. Seeding is one-time
+// (callers guard it on the registry being empty), so dropping a group from
+// the seed only ever affects fresh databases — every existing one keeps the
+// node, and the settings window keeps rendering the group, until something
+// deletes it.
+//
+// The delete is recursive and transactional: a group and its children go
+// together or not at all, because a node whose parent has been removed is
+// unreachable rather than merely untidy.
+//
+// Removing a node that isn't there is not an error, so this is safe to call
+// unconditionally on every launch.
+//
+// Like RemoveProperty and UpdatePropertyOptions, it does not fire
+// OnPropertiesChanged: this is a definitional change (which settings
+// exist), not a user-edited value.
+//
+// It does not touch ui_state. The settings tree's expand/collapse state is
+// stored as one row keyed by the whole tree instance's own ID (see
+// settings.md), with individual node IDs living inside that row's JSON
+// blob, not as ui_state.component_id values — there is no per-node row to
+// delete. A removed node's ID lingering inside that blob is harmless:
+// settings.Service already filters expand/selection state against its
+// current node list on every read (InitialTreeState), so a stale ID is
+// silently dropped rather than surfaced.
+func (d *DB) RemoveNode(nodeID int64) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("db: remove node: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		WITH RECURSIVE subtree(id) AS (
+			SELECT id FROM settings_nodes WHERE id = ?
+			UNION ALL
+			SELECT n.id FROM settings_nodes n JOIN subtree s ON n.parent_id = s.id
+		)
+		SELECT id FROM subtree`, nodeID)
+	if err != nil {
+		return fmt.Errorf("db: remove node: %w", err)
+	}
+	var ids []any
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("db: remove node: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("db: remove node: %w", err)
+	}
+	rows.Close()
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+
+	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM settings_properties WHERE node_id IN (%s)`, placeholders), ids...); err != nil {
+		return fmt.Errorf("db: remove node: %w", err)
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`DELETE FROM settings_nodes WHERE id IN (%s)`, placeholders), ids...); err != nil {
+		return fmt.Errorf("db: remove node: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("db: remove node: %w", err)
+	}
+	return nil
+}
+
 // AddProperty inserts a property on the given node. capability is optional
 // (at most one value is used) — see Property.Capability.
 func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error {

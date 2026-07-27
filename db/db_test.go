@@ -681,4 +681,189 @@ func TestSetPropertySliderDoesNotFireOnPropertiesChanged(t *testing.T) {
 	}
 }
 
+func nodeExists(t *testing.T, d *db.DB, nodeID int64) bool {
+	t.Helper()
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	for _, n := range nodes {
+		if n.ID == nodeID {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRemoveNodeDeletesLeafNodeAndItsProperties(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "NPU", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "npu_url", "NPU URL", db.PropertyString, "http://localhost", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	if err := d.RemoveNode(nodeID); err != nil {
+		t.Fatalf("RemoveNode: %v", err)
+	}
+
+	if nodeExists(t, d, nodeID) {
+		t.Error("node still present after RemoveNode")
+	}
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties: %v", err)
+	}
+	if len(props) != 0 {
+		t.Errorf("GetProperties: got %d properties after RemoveNode, want 0", len(props))
+	}
+}
+
+func TestRemoveNodeDeletesChildrenAndGrandchildrenRecursively(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	hardwareID, err := d.AddNode(nil, "Hardware", 0)
+	if err != nil {
+		t.Fatalf("AddNode(Hardware): %v", err)
+	}
+	npuID, err := d.AddNode(&hardwareID, "NPU", 0)
+	if err != nil {
+		t.Fatalf("AddNode(NPU): %v", err)
+	}
+	if err := d.AddProperty(npuID, "npu_url", "NPU URL", db.PropertyString, "http://localhost", nil); err != nil {
+		t.Fatalf("AddProperty(npu_url): %v", err)
+	}
+	if err := d.AddProperty(npuID, "npu_server", "NPU server", db.PropertyString, "local", nil); err != nil {
+		t.Fatalf("AddProperty(npu_server): %v", err)
+	}
+	advancedID, err := d.AddNode(&npuID, "Advanced", 0)
+	if err != nil {
+		t.Fatalf("AddNode(Advanced): %v", err)
+	}
+	if err := d.AddProperty(advancedID, "timeout", "Timeout", db.PropertyInt, "30", nil); err != nil {
+		t.Fatalf("AddProperty(timeout): %v", err)
+	}
+
+	if err := d.RemoveNode(npuID); err != nil {
+		t.Fatalf("RemoveNode: %v", err)
+	}
+
+	if nodeExists(t, d, npuID) {
+		t.Error("NPU node still present after RemoveNode")
+	}
+	if nodeExists(t, d, advancedID) {
+		t.Error("grandchild Advanced node still present after RemoveNode")
+	}
+	if !nodeExists(t, d, hardwareID) {
+		t.Error("parent Hardware node was removed, want it untouched")
+	}
+
+	for _, id := range []int64{npuID, advancedID} {
+		props, err := d.GetProperties(id)
+		if err != nil {
+			t.Fatalf("GetProperties(%d): %v", id, err)
+		}
+		if len(props) != 0 {
+			t.Errorf("GetProperties(%d): got %d properties after RemoveNode, want 0", id, len(props))
+		}
+	}
+}
+
+func TestRemoveNodeNonexistentIDIsNotAnError(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Hardware", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	if err := d.RemoveNode(999999); err != nil {
+		t.Errorf("RemoveNode on nonexistent ID: got %v, want nil", err)
+	}
+	if !nodeExists(t, d, nodeID) {
+		t.Error("unrelated node was removed by RemoveNode on a nonexistent ID")
+	}
+}
+
+func TestRemoveNodeLeavesSiblingSubtreeUntouched(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	npuID, err := d.AddNode(nil, "NPU", 0)
+	if err != nil {
+		t.Fatalf("AddNode(NPU): %v", err)
+	}
+	if err := d.AddProperty(npuID, "npu_url", "NPU URL", db.PropertyString, "http://localhost", nil); err != nil {
+		t.Fatalf("AddProperty(npu_url): %v", err)
+	}
+
+	gpuID, err := d.AddNode(nil, "GPU", 1)
+	if err != nil {
+		t.Fatalf("AddNode(GPU): %v", err)
+	}
+	if err := d.AddProperty(gpuID, "gpu_layers", "GPU layers", db.PropertyInt, "32", nil); err != nil {
+		t.Fatalf("AddProperty(gpu_layers): %v", err)
+	}
+
+	if err := d.RemoveNode(npuID); err != nil {
+		t.Fatalf("RemoveNode: %v", err)
+	}
+
+	if !nodeExists(t, d, gpuID) {
+		t.Fatal("sibling GPU node was removed")
+	}
+	props, err := d.GetProperties(gpuID)
+	if err != nil {
+		t.Fatalf("GetProperties(GPU): %v", err)
+	}
+	if len(props) != 1 || props[0].Key != "gpu_layers" || props[0].Value != "32" {
+		t.Errorf("GPU properties changed by removing NPU: got %+v", props)
+	}
+}
+
+func TestRemoveNodeDoesNotFireOnPropertiesChanged(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "NPU", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "npu_url", "NPU URL", db.PropertyString, "http://localhost", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	fired := false
+	unsubscribe := d.OnPropertiesChanged(nodeID, func(map[string]string) { fired = true })
+	defer unsubscribe()
+
+	if err := d.RemoveNode(nodeID); err != nil {
+		t.Fatalf("RemoveNode: %v", err)
+	}
+	if fired {
+		t.Error("RemoveNode fired OnPropertiesChanged, want it not to")
+	}
+}
+
 

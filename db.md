@@ -126,6 +126,7 @@ func (d *DB) GetProperties(nodeID int64) ([]Property, error)
 func (d *DB) SaveProperties(nodeID int64, values map[string]string) error
 func (d *DB) AddNode(parentID *int64, description string, sortOrder int) (int64, error)
 func (d *DB) RenameNode(nodeID int64, description string) error
+func (d *DB) RemoveNode(nodeID int64) error
 func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error
 ```
 
@@ -138,6 +139,18 @@ launch, the same way `RemoveProperty` is. It does not fire
 `OnPropertiesChanged` (a rename is a schema/label change, not a value edit)
 and does not repaint an already-open settings window — `ListNodes` is only
 re-read on mount.
+
+`RemoveNode` deletes a node, every node beneath it (to any depth), and all
+of their properties, in one transaction — for a settings group an app has
+retired. Like `RenameNode`, removing a node that doesn't exist is not an
+error, so it's safe to call unconditionally on every launch, and it does
+not fire `OnPropertiesChanged`. It does not touch `ui_state`: the settings
+tree's expand/collapse state lives in one row keyed by the whole tree
+instance's own ID, with individual node IDs inside that row's JSON blob —
+there is no per-node `ui_state` row to clean up, and a removed node's ID
+lingering in that blob is already silently dropped by
+`settings.Service.InitialTreeState`'s existing filter against the current
+node list.
 
 `Node` and `Property` types, and the `PropertyType` enum
 (`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyFloat`/
