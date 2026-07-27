@@ -125,8 +125,19 @@ func (d *DB) ListSettings() ([]Node, error)
 func (d *DB) GetProperties(nodeID int64) ([]Property, error)
 func (d *DB) SaveProperties(nodeID int64, values map[string]string) error
 func (d *DB) AddNode(parentID *int64, description string, sortOrder int) (int64, error)
+func (d *DB) RenameNode(nodeID int64, description string) error
 func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error
 ```
+
+`RenameNode` changes a node's `Description` without touching its ID or its
+properties — for a label derived from data that can change (a file's own
+metadata, a device name) and needs correcting on a later launch without the
+user losing anything staged under that node. Renaming a node that doesn't
+exist is not an error, so it's safe to call unconditionally on every
+launch, the same way `RemoveProperty` is. It does not fire
+`OnPropertiesChanged` (a rename is a schema/label change, not a value edit)
+and does not repaint an already-open settings window — `ListNodes` is only
+re-read on mount.
 
 `Node` and `Property` types, and the `PropertyType` enum
 (`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyFloat`/

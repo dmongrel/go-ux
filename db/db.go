@@ -214,6 +214,29 @@ func (d *DB) AddNode(parentID *int64, description string, sortOrder int) (int64,
 	return res.LastInsertId()
 }
 
+// RenameNode changes a node's description. The node's ID and its properties
+// are untouched, so a label derived from data that can change (a file's own
+// metadata, a device name, a project title) can be corrected on a later
+// launch without the user losing anything stored under it.
+//
+// Renaming a node that does not exist is not an error, so this is safe to
+// call unconditionally on every launch.
+//
+// Like RemoveProperty and UpdatePropertyOptions, it does not fire
+// OnPropertiesChanged: this is a definitional change (what the tree says),
+// not a user-edited value. It also does not repaint a settings window that
+// is already open — ListNodes is only re-read on mount.
+func (d *DB) RenameNode(nodeID int64, description string) error {
+	_, err := d.conn.Exec(
+		`UPDATE settings_nodes SET description = ? WHERE id = ?`,
+		description, nodeID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: rename node: %w", err)
+	}
+	return nil
+}
+
 // AddProperty inserts a property on the given node. capability is optional
 // (at most one value is used) — see Property.Capability.
 func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error {

@@ -4,6 +4,7 @@
 package db_test
 
 import (
+	"reflect"
 	"slices"
 	"testing"
 
@@ -341,6 +342,176 @@ func TestOnPropertiesChangedOnlyFiresForItsOwnNode(t *testing.T) {
 	}
 	if fired {
 		t.Error("nodeA's callback fired for a write to nodeB")
+	}
+}
+
+func TestRenameNodeChangesDescriptionOnly(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Old Label", 3)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	if err := d.RenameNode(nodeID, "New Label"); err != nil {
+		t.Fatalf("RenameNode: %v", err)
+	}
+
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	var got *db.Node
+	for i := range nodes {
+		if nodes[i].ID == nodeID {
+			got = &nodes[i]
+		}
+	}
+	if got == nil {
+		t.Fatal("renamed node not found in ListSettings")
+	}
+	if got.Description != "New Label" {
+		t.Errorf("Description = %q, want %q", got.Description, "New Label")
+	}
+	if got.ID != nodeID {
+		t.Errorf("ID = %d, want %d", got.ID, nodeID)
+	}
+	if got.ParentID != nil {
+		t.Errorf("ParentID = %v, want nil", got.ParentID)
+	}
+	if got.SortOrder != 3 {
+		t.Errorf("SortOrder = %d, want 3", got.SortOrder)
+	}
+}
+
+func TestRenameNodePreservesProperties(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Model", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "info_id", "Info ID", db.PropertyReadOnly, "abc-123", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "quant", "Quantisation", db.PropertyEnum, "Q4_K_S", []string{"Q4_K_S", "Q8_0"}, "affects file size"); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	before, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties before rename: %v", err)
+	}
+
+	if err := d.RenameNode(nodeID, "Model (renamed)"); err != nil {
+		t.Fatalf("RenameNode: %v", err)
+	}
+
+	after, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties after rename: %v", err)
+	}
+
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("properties changed by rename:\nbefore = %+v\nafter  = %+v", before, after)
+	}
+}
+
+func TestRenameNodeDoesNotAffectSiblingsOrChildren(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	parentID, err := d.AddNode(nil, "Parent", 0)
+	if err != nil {
+		t.Fatalf("AddNode(parent): %v", err)
+	}
+	childID, err := d.AddNode(&parentID, "Child", 0)
+	if err != nil {
+		t.Fatalf("AddNode(child): %v", err)
+	}
+	siblingID, err := d.AddNode(nil, "Sibling", 1)
+	if err != nil {
+		t.Fatalf("AddNode(sibling): %v", err)
+	}
+
+	if err := d.RenameNode(childID, "Child (renamed)"); err != nil {
+		t.Fatalf("RenameNode: %v", err)
+	}
+
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	byID := make(map[int64]db.Node, len(nodes))
+	for _, n := range nodes {
+		byID[n.ID] = n
+	}
+	if byID[parentID].Description != "Parent" {
+		t.Errorf("parent Description = %q, want %q", byID[parentID].Description, "Parent")
+	}
+	if byID[siblingID].Description != "Sibling" {
+		t.Errorf("sibling Description = %q, want %q", byID[siblingID].Description, "Sibling")
+	}
+	if byID[childID].Description != "Child (renamed)" {
+		t.Errorf("child Description = %q, want %q", byID[childID].Description, "Child (renamed)")
+	}
+}
+
+func TestRenameNodeNonexistentIDIsNotAnError(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	if err := d.RenameNode(999999, "Doesn't Matter"); err != nil {
+		t.Errorf("RenameNode on nonexistent ID: got %v, want nil", err)
+	}
+}
+
+func TestRenameNodeAllowsDuplicateDescription(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeA, err := d.AddNode(nil, "Q4_K_S", 0)
+	if err != nil {
+		t.Fatalf("AddNode(A): %v", err)
+	}
+	nodeB, err := d.AddNode(nil, "Q8_0", 1)
+	if err != nil {
+		t.Fatalf("AddNode(B): %v", err)
+	}
+
+	if err := d.RenameNode(nodeB, "Q4_K_S"); err != nil {
+		t.Fatalf("RenameNode: %v", err)
+	}
+
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	var count int
+	for _, n := range nodes {
+		if n.Description == "Q4_K_S" && (n.ID == nodeA || n.ID == nodeB) {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("got %d nodes named %q, want 2", count, "Q4_K_S")
 	}
 }
 
