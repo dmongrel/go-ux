@@ -130,25 +130,34 @@ export function mountSettings(root: HTMLElement) {
                 item.style.alignItems = "center";
                 item.style.gap = "4px";
 
-                const toggle = document.createElement("span");
-                toggle.style.width = "12px";
-                toggle.style.display = "inline-block";
-                toggle.style.cursor = hasChildren ? "pointer" : "default";
-                toggle.textContent = hasChildren ? (isExpanded ? "▾" : "▸") : "";
+                const toggleExpanded = () => {
+                    if (expanded.has(key)) {
+                        expanded.delete(key);
+                        SetExpanded(key, false);
+                    } else {
+                        expanded.add(key);
+                        SetExpanded(key, true);
+                    }
+                };
+
+                const marker = document.createElement("span");
+                marker.className = "tree-marker";
                 if (hasChildren) {
+                    const toggle = document.createElement("span");
+                    toggle.className = "tree-toggle" + (isExpanded ? " expanded" : "");
+                    toggle.textContent = "▸";
                     toggle.addEventListener("click", (ev) => {
                         ev.stopPropagation();
-                        if (expanded.has(key)) {
-                            expanded.delete(key);
-                            SetExpanded(key, false);
-                        } else {
-                            expanded.add(key);
-                            SetExpanded(key, true);
-                        }
+                        toggleExpanded();
                         renderTree();
                     });
+                    marker.appendChild(toggle);
+                } else if (depth > 0) {
+                    const dot = document.createElement("span");
+                    dot.className = "tree-dot";
+                    marker.appendChild(dot);
                 }
-                item.appendChild(toggle);
+                item.appendChild(marker);
 
                 const label = document.createElement("span");
                 label.textContent = n.Description;
@@ -158,6 +167,7 @@ export function mountSettings(root: HTMLElement) {
                 item.addEventListener("click", () => {
                     selected = key;
                     SetSelected(key);
+                    if (hasChildren) toggleExpanded();
                     renderTree();
                     renderForm();
                 });

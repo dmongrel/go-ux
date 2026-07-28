@@ -133,6 +133,44 @@ html, body, #root {
     color: white;
 }
 
+.tree-marker {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tree-toggle {
+    display: inline-block;
+    font-size: 15px;
+    line-height: 1;
+    color: #9a9a9a;
+    cursor: pointer;
+    transform: rotate(0deg);
+    transition: transform 0.15s ease;
+}
+
+.tree-toggle.expanded {
+    transform: rotate(90deg);
+}
+
+.tree-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #5a5d61;
+}
+
+.tree-item.active .tree-dot {
+    background: #d5e2fb;
+}
+
+.tree-item.active .tree-toggle {
+    color: #d5e2fb;
+}
+
 .settings-form {
     flex: 1;
     padding: 20px;
