@@ -205,10 +205,12 @@ export function mountSettings(root: HTMLElement) {
             row.appendChild(label);
 
             let input: HTMLInputElement | HTMLSelectElement | HTMLSpanElement;
+            let fieldContainer: HTMLElement;
             if (prop.Type === PropertyType.PropertyReadOnly) {
                 input = document.createElement("span");
                 input.textContent = prop.Value;
                 input.className = "prop-readonly-value";
+                fieldContainer = input;
             } else if (prop.Type === PropertyType.PropertyBool) {
                 input = document.createElement("input");
                 (input as HTMLInputElement).type = "checkbox";
@@ -216,6 +218,7 @@ export function mountSettings(root: HTMLElement) {
                 input.addEventListener("change", () => {
                     StageProperty(nodeID, prop.Key, (input as HTMLInputElement).checked ? "true" : "false");
                 });
+                fieldContainer = input;
             } else if (prop.Type === PropertyType.PropertyEnum) {
                 input = document.createElement("select");
                 for (const opt of prop.EnumOptions) {
@@ -228,13 +231,47 @@ export function mountSettings(root: HTMLElement) {
                 input.addEventListener("change", () => {
                     StageProperty(nodeID, prop.Key, (input as HTMLSelectElement).value);
                 });
+                fieldContainer = input;
             } else {
-                input = document.createElement("input");
-                (input as HTMLInputElement).type = prop.Type === PropertyType.PropertyInt || prop.Type === PropertyType.PropertyFloat ? "number" : "text";
-                (input as HTMLInputElement).value = prop.Value;
-                input.addEventListener("change", () => {
-                    StageProperty(nodeID, prop.Key, (input as HTMLInputElement).value);
+                const textInput = document.createElement("input");
+                textInput.type = prop.Type === PropertyType.PropertyInt || prop.Type === PropertyType.PropertyFloat ? "number" : "text";
+                textInput.value = prop.Value;
+                textInput.addEventListener("change", () => {
+                    StageProperty(nodeID, prop.Key, textInput.value);
                 });
+                input = textInput;
+
+                // The clear button uses mousedown+preventDefault (not just a
+                // click handler) so the text field never actually loses
+                // focus when it's clicked — clearing via a blur/refocus
+                // cycle is what lets a password manager or any other
+                // focus-driven autofill silently repopulate the field right
+                // after it looked cleared. Clearing also stages "" directly
+                // rather than relying on a synthetic 'change' event, since
+                // setting .value from script doesn't dispatch one.
+                const wrapper = document.createElement("div");
+                wrapper.className = "field-wrapper";
+                wrapper.appendChild(textInput);
+
+                const clearBtn = document.createElement("button");
+                clearBtn.type = "button";
+                clearBtn.className = "field-clear";
+                clearBtn.textContent = "×";
+                clearBtn.setAttribute("aria-label", "Clear");
+                clearBtn.style.visibility = textInput.value ? "visible" : "hidden";
+                clearBtn.addEventListener("mousedown", (ev) => ev.preventDefault());
+                clearBtn.addEventListener("click", () => {
+                    textInput.value = "";
+                    StageProperty(nodeID, prop.Key, "");
+                    clearBtn.style.visibility = "hidden";
+                    textInput.focus();
+                });
+                textInput.addEventListener("input", () => {
+                    clearBtn.style.visibility = textInput.value ? "visible" : "hidden";
+                });
+                wrapper.appendChild(clearBtn);
+
+                fieldContainer = wrapper;
             }
             if (prop.Type !== PropertyType.PropertyReadOnly) input.className = "input";
 
@@ -261,7 +298,7 @@ export function mountSettings(root: HTMLElement) {
                 valueGroup.appendChild(slider);
             }
 
-            valueGroup.appendChild(input);
+            valueGroup.appendChild(fieldContainer);
             if (prop.Capability) {
                 const capability = document.createElement("span");
                 capability.className = "prop-capability";

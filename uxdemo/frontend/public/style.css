@@ -58,6 +58,41 @@ html, body, #root {
     color: #cfcfcf;
 }
 
+.field-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.field-wrapper .input {
+    padding-right: 26px;
+}
+
+.field-clear {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: #9a9a9a;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+}
+
+.field-clear:hover {
+    background: #3a3d41;
+    color: #e6e6e6;
+}
+
 .divider {
     border: none;
     border-top: 1px solid #333;

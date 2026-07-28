@@ -517,6 +517,105 @@ func TestRenameNodeAllowsDuplicateDescription(t *testing.T) {
 	}
 }
 
+// siblingOrder returns the Descriptions of parentID's children as
+// ListSettings reports them, in order — the ordering ListSettings actually
+// promises (sort_order, then id), not the order nodes happen to appear in
+// the returned slice for unrelated reasons.
+func siblingOrder(t *testing.T, d *db.DB, parentID int64) []string {
+	t.Helper()
+	nodes, err := d.ListSettings()
+	if err != nil {
+		t.Fatalf("ListSettings: %v", err)
+	}
+	var names []string
+	for _, n := range nodes {
+		if n.ParentID != nil && *n.ParentID == parentID {
+			names = append(names, n.Description)
+		}
+	}
+	return names
+}
+
+func TestSetNodeSortOrderMovesNodeTopToBottomAndBack(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	parentID, err := d.AddNode(nil, "Parent", 0)
+	if err != nil {
+		t.Fatalf("AddNode(Parent): %v", err)
+	}
+	aboutID, err := d.AddNode(&parentID, "About", 0)
+	if err != nil {
+		t.Fatalf("AddNode(About): %v", err)
+	}
+	if _, err := d.AddNode(&parentID, "General", 1); err != nil {
+		t.Fatalf("AddNode(General): %v", err)
+	}
+	if _, err := d.AddNode(&parentID, "Advanced", 2); err != nil {
+		t.Fatalf("AddNode(Advanced): %v", err)
+	}
+
+	if got := siblingOrder(t, d, parentID); !slices.Equal(got, []string{"About", "General", "Advanced"}) {
+		t.Fatalf("initial order = %v, want [About General Advanced]", got)
+	}
+
+	if err := d.SetNodeSortOrder(aboutID, 3); err != nil {
+		t.Fatalf("SetNodeSortOrder(bottom): %v", err)
+	}
+	if got := siblingOrder(t, d, parentID); !slices.Equal(got, []string{"General", "Advanced", "About"}) {
+		t.Fatalf("order after moving About to bottom = %v, want [General Advanced About]", got)
+	}
+
+	if err := d.SetNodeSortOrder(aboutID, -1); err != nil {
+		t.Fatalf("SetNodeSortOrder(top): %v", err)
+	}
+	if got := siblingOrder(t, d, parentID); !slices.Equal(got, []string{"About", "General", "Advanced"}) {
+		t.Fatalf("order after moving About back to top = %v, want [About General Advanced]", got)
+	}
+}
+
+func TestSetNodeSortOrderNonexistentIDIsNotAnError(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	if err := d.SetNodeSortOrder(999999, 0); err != nil {
+		t.Errorf("SetNodeSortOrder on nonexistent ID: got %v, want nil", err)
+	}
+}
+
+func TestSetNodeSortOrderDoesNotFireOnPropertiesChanged(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "About", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "k", "K", db.PropertyString, "v", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	fired := false
+	unsubscribe := d.OnPropertiesChanged(nodeID, func(map[string]string) { fired = true })
+	defer unsubscribe()
+
+	if err := d.SetNodeSortOrder(nodeID, 5); err != nil {
+		t.Fatalf("SetNodeSortOrder: %v", err)
+	}
+	if fired {
+		t.Error("SetNodeSortOrder fired OnPropertiesChanged, want it not to")
+	}
+}
+
 // TestGetPropertiesSucceedsOnLegacyDatabaseMissingCapabilityColumn reproduces
 // the reported failure: a database file created before the `capability`
 // column existed used to make every GetProperties call fail with "no such

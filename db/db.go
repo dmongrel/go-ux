@@ -246,6 +246,34 @@ func (d *DB) RenameNode(nodeID int64, description string) error {
 	return nil
 }
 
+// SetNodeSortOrder changes a node's sort order among its siblings — the
+// missing piece for reordering the tree (e.g. moving a node from the top
+// of its sibling group to the bottom, or vice versa). ListSettings orders
+// nodes by (sort_order, id), so setting a value lower than every sibling's
+// moves a node to the top of the group, and a value higher than every
+// sibling's moves it to the bottom; ties among siblings sharing a
+// sort_order break by insertion order (id), same as ListSettings always
+// has. AddNode sets sort_order once at creation with no way to revise it
+// afterward — this fills that gap the same way RenameNode fills the
+// equivalent gap for a node's description.
+//
+// Setting the sort order of a node that doesn't exist is not an error, so
+// this is safe to call unconditionally on every launch.
+//
+// Like RenameNode and RemoveProperty, it does not fire
+// OnPropertiesChanged: this is a definitional change (tree order), not a
+// user-edited property value.
+func (d *DB) SetNodeSortOrder(nodeID int64, sortOrder int) error {
+	_, err := d.conn.Exec(
+		`UPDATE settings_nodes SET sort_order = ? WHERE id = ?`,
+		sortOrder, nodeID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: set node sort order: %w", err)
+	}
+	return nil
+}
+
 // RemoveNode deletes a node, every node beneath it, and all of their
 // properties, for a settings group an app has retired. Seeding is one-time
 // (callers guard it on the registry being empty), so dropping a group from

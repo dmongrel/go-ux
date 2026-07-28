@@ -138,6 +138,7 @@ func (d *DB) SaveProperties(nodeID int64, values map[string]string) error
 func (d *DB) AddNode(parentID *int64, description string, sortOrder int) (int64, error)
 func (d *DB) RenameNode(nodeID int64, description string) error
 func (d *DB) RemoveNode(nodeID int64) error
+func (d *DB) SetNodeSortOrder(nodeID int64, sortOrder int) error
 func (d *DB) AddProperty(nodeID int64, key, label string, ptype PropertyType, value string, enumOptions []string, capability ...string) error
 ```
 
@@ -162,6 +163,16 @@ there is no per-node `ui_state` row to clean up, and a removed node's ID
 lingering in that blob is already silently dropped by
 `settings.Service.InitialTreeState`'s existing filter against the current
 node list.
+
+`SetNodeSortOrder` changes a node's sort order among its siblings —
+`ListSettings` orders nodes by `(sort_order, id)`, so a value lower than
+every sibling's moves a node to the top of its group and a value higher
+than every sibling's moves it to the bottom (e.g. moving an "About" node
+from top to bottom and back). `AddNode` sets `sort_order` once at creation
+with no way to revise it afterward; this is that missing piece, the same
+way `RenameNode` is the missing piece for a node's description. Same
+contract as `RenameNode`: a nonexistent node ID is not an error, and it
+does not fire `OnPropertiesChanged`.
 
 `Node` and `Property` types, and the `PropertyType` enum
 (`PropertyBool`/`PropertyString`/`PropertyInt`/`PropertyFloat`/

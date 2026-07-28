@@ -100,6 +100,16 @@ Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new t
   `db.SetPropertySlider` (see `db.md`); no effect on any other
   `PropertyType`.
 
+  Every text/number input (`PropertyString`/`PropertyInt`/`PropertyFloat`)
+  gets a right-justified `×` clear button (`.field-clear`, inside
+  `.field-wrapper`) that only shows once the field has a value. It clears
+  and stages `""` on click, but deliberately never lets the input lose
+  focus first (`mousedown` calls `preventDefault()` before the `click`
+  handler runs) — clearing via a blur/refocus cycle is exactly what lets a
+  password manager or any other focus-driven autofill silently repopulate
+  a field right after it looked cleared, so the field is cleared without
+  ever actually blurring.
+
 ## Tree markers (frontend)
 
 The reference frontend (`uxdemo/frontend/src/views/settings.ts`) renders no
