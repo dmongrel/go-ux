@@ -100,6 +100,30 @@ Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new t
   `db.SetPropertySlider` (see `db.md`); no effect on any other
   `PropertyType`.
 
+## Tree markers (frontend)
+
+The reference frontend (`uxdemo/frontend/src/views/settings.ts`) renders no
+branch/connector lines. Instead:
+
+- A node with children (a "primary" node) gets a `▸` marker
+  (`.tree-toggle`) that rotates 90° via CSS transition when expanded
+  (`.tree-toggle.expanded`) — sized via `.tree-toggle`'s `font-size` in
+  `uxdemo/frontend/public/style.css` (currently 15px, 1.5x the tree's base
+  text size).
+- A leaf node nested under something (`depth > 0`, no children of its own)
+  gets a small dot (`.tree-dot`) in the same marker column instead, to read
+  as "indented under a parent" without drawing a connector line. A
+  root-level leaf gets neither.
+- Clicking anywhere on a parent row (not just the `▸` marker) toggles
+  expand/collapse, in addition to selecting the node — the marker's own
+  click handler stops propagation so it doesn't double-toggle.
+
+Both markers live in a fixed-width `.tree-marker` column so triangle and
+dot rows stay aligned. Anyone copying `settings.ts`/`style.css` into their
+own app (see "Known limitation: frontend distribution" in `CLAUDE.md`) gets
+this behavior as part of that copy; there is no other distribution
+mechanism today.
+
 ## Search / filtering behavior
 
 Typing in the frontend's search box filters the tree live (no round trip —
