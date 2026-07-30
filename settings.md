@@ -83,7 +83,7 @@ Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new t
   | `PropertyBool`     | checkbox           | the literal string `"true"` or `"false"`   |
   | `PropertyString`   | text input         | raw string, unconstrained                  |
   | `PropertyInt`      | number input (+ slider if `Slider`) | base-10 integer string    |
-  | `PropertyFloat`    | number input       | decimal string                             |
+  | `PropertyFloat`    | number input (+ slider if `Slider`) | decimal string            |
   | `PropertyEnum`     | select             | one of the strings in `EnumOptions`        |
   | `PropertyReadOnly` | plain text, no input | raw string, not editable/stageable      |
 
@@ -93,12 +93,13 @@ Everything comes from `github.com/dmongrel/go-ux/db`; this package adds no new t
   property type, set via `AddProperty`'s trailing `capability` parameter
   (see `db.md`).
 
-  `Slider`, when true on a `PropertyInt`, additionally renders a slider
-  spanning `SliderMin..SliderMax` alongside the number input — typing in
-  the number input repositions the slider, and dragging the slider both
-  updates the number input and stages the value live. Set via
-  `db.SetPropertySlider` (see `db.md`); no effect on any other
-  `PropertyType`.
+  `Slider`, when true on a `PropertyInt` or `PropertyFloat`, additionally
+  renders a slider spanning `SliderMin..SliderMax` alongside the number
+  input — typing in the number input repositions the slider, and dragging
+  the slider both updates the number input and stages the value live. A
+  `PropertyFloat` slider allows fractional values (`step="any"`); a
+  `PropertyInt` slider steps by 1. Set via `db.SetPropertySlider` (see
+  `db.md`); no effect on any other `PropertyType`.
 
   Every text/number input (`PropertyString`/`PropertyInt`/`PropertyFloat`)
   gets a right-justified `×` clear button (`.field-clear`, inside

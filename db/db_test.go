@@ -147,8 +147,8 @@ func TestSettingsRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProperties: %v", err)
 	}
-	if len(props) != 4 {
-		t.Fatalf("GetProperties(Terminal): got %d properties, want 4", len(props))
+	if len(props) != 5 {
+		t.Fatalf("GetProperties(Terminal): got %d properties, want 5", len(props))
 	}
 
 	if err := d.SaveProperties(terminalID, map[string]string{"tab_width": "8"}); err != nil {
@@ -715,10 +715,44 @@ func TestSetPropertySliderRoundTrips(t *testing.T) {
 		t.Error("Slider = false after SetPropertySlider, want true")
 	}
 	if props[0].SliderMin != 1 || props[0].SliderMax != 65535 {
-		t.Errorf("SliderMin/SliderMax = %d/%d, want 1/65535", props[0].SliderMin, props[0].SliderMax)
+		t.Errorf("SliderMin/SliderMax = %v/%v, want 1/65535", props[0].SliderMin, props[0].SliderMax)
 	}
 	if props[0].Value != "8080" {
 		t.Errorf("Value = %q, want %q (SetPropertySlider must not touch it)", props[0].Value, "8080")
+	}
+}
+
+func TestSetPropertySliderRoundTripsFloat(t *testing.T) {
+	d, err := test.NewDB()
+	if err != nil {
+		t.Fatalf("NewDB: %v", err)
+	}
+	defer d.Close()
+
+	nodeID, err := d.AddNode(nil, "Server", 0)
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := d.AddProperty(nodeID, "ratio", "Ratio", db.PropertyFloat, "1.5", nil); err != nil {
+		t.Fatalf("AddProperty: %v", err)
+	}
+
+	if err := d.SetPropertySlider(nodeID, "ratio", 0.5, 2.5); err != nil {
+		t.Fatalf("SetPropertySlider: %v", err)
+	}
+
+	props, err := d.GetProperties(nodeID)
+	if err != nil {
+		t.Fatalf("GetProperties after SetPropertySlider: %v", err)
+	}
+	if !props[0].Slider {
+		t.Error("Slider = false after SetPropertySlider, want true")
+	}
+	if props[0].SliderMin != 0.5 || props[0].SliderMax != 2.5 {
+		t.Errorf("SliderMin/SliderMax = %v/%v, want 0.5/2.5", props[0].SliderMin, props[0].SliderMax)
+	}
+	if props[0].Value != "1.5" {
+		t.Errorf("Value = %q, want %q (SetPropertySlider must not touch it)", props[0].Value, "1.5")
 	}
 }
 
@@ -749,7 +783,7 @@ func TestSetPropertySliderDefaultsRangeWhenMinMaxBothZero(t *testing.T) {
 		t.Error("Slider = false, want true")
 	}
 	if props[0].SliderMin != 0 || props[0].SliderMax != 100 {
-		t.Errorf("SliderMin/SliderMax = %d/%d, want 0/100 default", props[0].SliderMin, props[0].SliderMax)
+		t.Errorf("SliderMin/SliderMax = %v/%v, want 0/100 default", props[0].SliderMin, props[0].SliderMax)
 	}
 }
 

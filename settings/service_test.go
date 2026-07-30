@@ -57,8 +57,8 @@ func TestGetPropertiesReturnsNodeProperties(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProperties: %v", err)
 	}
-	if len(props) != 4 {
-		t.Fatalf("len(props) = %d, want 4", len(props))
+	if len(props) != 5 {
+		t.Fatalf("len(props) = %d, want 5", len(props))
 	}
 }
 

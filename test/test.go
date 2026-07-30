@@ -37,6 +37,12 @@ func SeedExample(d *db.DB) error {
 	if err := d.AddProperty(terminalID, "shell_version", "Shell version", db.PropertyReadOnly, "5.2.15", nil); err != nil {
 		return err
 	}
+	if err := d.AddProperty(terminalID, "line_height", "Line height", db.PropertyFloat, "1.2", nil); err != nil {
+		return err
+	}
+	if err := d.SetPropertySlider(terminalID, "line_height", 0.8, 2.0); err != nil {
+		return err
+	}
 
 	vcsID, err := d.AddNode(nil, "Version Control", 1)
 	if err != nil {

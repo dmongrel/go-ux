@@ -278,13 +278,14 @@ export function mountSettings(root: HTMLElement) {
             const valueGroup = document.createElement("div");
             valueGroup.className = "prop-value";
 
-            if (prop.Type === PropertyType.PropertyInt && prop.Slider) {
+            if ((prop.Type === PropertyType.PropertyInt || prop.Type === PropertyType.PropertyFloat) && prop.Slider) {
                 const numberInput = input as HTMLInputElement;
                 const slider = document.createElement("input");
                 slider.type = "range";
                 slider.className = "prop-slider";
                 slider.min = String(prop.SliderMin);
                 slider.max = String(prop.SliderMax);
+                slider.step = prop.Type === PropertyType.PropertyFloat ? "any" : "1";
                 slider.value = numberInput.value;
 
                 slider.addEventListener("input", () => {

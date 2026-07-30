@@ -52,13 +52,12 @@ type Property struct {
 	// "min 1, max 72") rather than encoding it in Label or Value. Empty
 	// means no trailing label is shown.
 	Capability string
-	// Slider renders a PropertyInt with a slider spanning SliderMin..
-	// SliderMax alongside its usual number input — the user can still type
-	// an exact value, and the slider repositions to match. Set via
-	// SetPropertySlider; ignored for every PropertyType other than
-	// PropertyInt.
+	// Slider renders a PropertyInt or PropertyFloat with a slider spanning
+	// SliderMin..SliderMax alongside its usual number input — the user can
+	// still type an exact value, and the slider repositions to match. Set
+	// via SetPropertySlider; ignored for every other PropertyType.
 	Slider               bool
-	SliderMin, SliderMax int
+	SliderMin, SliderMax float64
 }
 
 // DB is a handle to the go-ux persistence store.
@@ -406,17 +405,17 @@ func (d *DB) UpdatePropertyOptions(nodeID int64, key string, enumOptions []strin
 	return nil
 }
 
-// SetPropertySlider marks an existing PropertyInt property as
-// slider-enabled, rendering a slider spanning min..max (inclusive)
+// SetPropertySlider marks an existing PropertyInt or PropertyFloat property
+// as slider-enabled, rendering a slider spanning min..max (inclusive)
 // alongside its existing number input — the user can still type an exact
 // value, and the slider repositions to match. Pass min == max == 0 to use
 // the default 0..100 range. Has no effect on any PropertyType other than
-// PropertyInt.
+// PropertyInt or PropertyFloat.
 //
 // Like UpdatePropertyOptions and RenameNode, it does not fire
 // OnPropertiesChanged: this is a definitional change (how the control is
 // rendered), not a user-edited value.
-func (d *DB) SetPropertySlider(nodeID int64, key string, min, max int) error {
+func (d *DB) SetPropertySlider(nodeID int64, key string, min, max float64) error {
 	if min == 0 && max == 0 {
 		min, max = 0, 100
 	}
