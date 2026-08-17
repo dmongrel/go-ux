@@ -50,6 +50,61 @@ export function mountTerminal(root: HTMLElement) {
     let currentFont: FontSettings = {Family: "", Size: 13, LineHeight: 1.0, ColumnWidth: 1.0};
     let closeOnExit = false;
 
+    // copySelection writes a terminal's current selection to the system
+    // clipboard, if any — used both for auto-copy-on-select and the
+    // right-click "Copy" menu item. Returns whether there was anything
+    // to copy.
+    function copySelection(term: Terminal): boolean {
+        const text = term.getSelection();
+        if (!text) return false;
+        navigator.clipboard.writeText(text).catch(() => {});
+        return true;
+    }
+
+    // A minimal right-click "Copy" menu, self-contained (inline-styled,
+    // not dependent on any host app's CSS) since this file is copied
+    // verbatim into consuming apps per go-ux's frontend-distribution
+    // contract. Only ever shows a single item; a no-op when there's no
+    // selection to copy, matching how most terminal apps grey it out.
+    let contextMenuEl: HTMLElement | null = null;
+    function closeContextMenu() {
+        contextMenuEl?.remove();
+        contextMenuEl = null;
+    }
+    function showContextMenu(ev: MouseEvent, term: Terminal) {
+        ev.preventDefault();
+        closeContextMenu();
+        if (!term.getSelection()) return;
+
+        const menu = document.createElement("div");
+        menu.style.cssText =
+            "position:fixed;z-index:10000;background:#2a2a2e;color:#eee;border:1px solid #454549;" +
+            "border-radius:4px;padding:4px 0;font:13px sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.4);" +
+            "min-width:100px;";
+        menu.style.left = `${ev.clientX}px`;
+        menu.style.top = `${ev.clientY}px`;
+
+        const item = document.createElement("div");
+        item.textContent = "Copy";
+        item.style.cssText = "padding:6px 16px;cursor:pointer;";
+        item.addEventListener("mouseenter", () => (item.style.background = "#3a3a3e"));
+        item.addEventListener("mouseleave", () => (item.style.background = ""));
+        item.addEventListener("click", () => {
+            copySelection(term);
+            closeContextMenu();
+        });
+        menu.appendChild(item);
+
+        document.body.appendChild(menu);
+        contextMenuEl = menu;
+    }
+    const onWindowClick = () => closeContextMenu();
+    const onWindowKeydown = (ev: KeyboardEvent) => {
+        if (ev.key === "Escape") closeContextMenu();
+    };
+    window.addEventListener("click", onWindowClick);
+    window.addEventListener("keydown", onWindowKeydown);
+
     function applyFont(term: Terminal, f: FontSettings) {
         term.options.fontSize = f.Size;
         term.options.lineHeight = f.LineHeight;
@@ -130,6 +185,9 @@ export function mountTerminal(root: HTMLElement) {
             SetFontSettings(next);
         }, {passive: false});
 
+        term.onSelectionChange(() => copySelection(term));
+        container.addEventListener("contextmenu", (ev) => showContextMenu(ev, term));
+
         const id = await Start(shellName, term.cols, term.rows);
 
         const tabEl = document.createElement("div"); // placeholder; renderTabStrip rebuilds real chips
@@ -189,6 +247,8 @@ export function mountTerminal(root: HTMLElement) {
         unsubExit();
         unsubFont();
         window.removeEventListener("resize", onResize);
+        window.removeEventListener("click", onWindowClick);
+        window.removeEventListener("keydown", onWindowKeydown);
         for (const t of tabs.values()) CloseSession(t.id);
     });
 
