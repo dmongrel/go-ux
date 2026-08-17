@@ -14,9 +14,27 @@ import {
 } from "../../bindings/github.com/dmongrel/go-ux/terminal/service";
 import type {ShellDef, FontSettings} from "../../bindings/github.com/dmongrel/go-ux/terminal/models";
 
-import {Terminal} from "@xterm/xterm";
+import {Terminal, type ITheme} from "@xterm/xterm";
 import {FitAddon} from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+
+// Based on Windows Terminal's "Campbell" palette, but with foreground
+// darkened from Campbell's own #cccccc — needed because Claude Code's
+// CLI renders its prompt placeholder (and the same text immediately
+// after Tab-accepting it) as plain unstyled text, relying entirely on
+// the terminal's default foreground reading as a muted gray rather than
+// pure white. xterm.js's own built-in default theme uses pure white
+// (#ffffff), which left the placeholder indistinguishable from bold
+// text.
+const CAMPBELL_THEME: ITheme = {
+    foreground: "#999999",
+    background: "#0c0c0c",
+    cursor: "#cccccc",
+    black: "#0c0c0c", red: "#c50f1f", green: "#13a10e", yellow: "#c19c00",
+    blue: "#0037da", magenta: "#881798", cyan: "#3a96dd", white: "#cccccc",
+    brightBlack: "#767676", brightRed: "#e74856", brightGreen: "#16c60c", brightYellow: "#f9f1a5",
+    brightBlue: "#3b78ff", brightMagenta: "#b4009e", brightCyan: "#61d6d6", brightWhite: "#f2f2f2",
+};
 
 // mountTerminal is the Wails/JS replacement for go-ux/terminal.Window/
 // TabView: multiple PTY-backed tabs (one xterm.js instance each — xterm.js
@@ -171,7 +189,7 @@ export function mountTerminal(root: HTMLElement) {
         container.style.display = "none";
         sessionsEl.appendChild(container);
 
-        const term = new Terminal({cursorBlink: true, convertEol: true});
+        const term = new Terminal({cursorBlink: true, convertEol: true, theme: CAMPBELL_THEME});
         applyFont(term, currentFont);
         const fitAddon = new FitAddon();
         term.loadAddon(fitAddon);

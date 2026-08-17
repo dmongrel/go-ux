@@ -6,6 +6,7 @@ package terminal
 import (
 	"errors"
 	"log"
+	"maps"
 	"strconv"
 	"sync"
 
@@ -144,6 +145,7 @@ func (s *Service) Start(shellName string, cols, rows int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	def.Env = withDefaultTermEnv(def.Env)
 
 	pty, err := newPtySession(def, cols, rows)
 	if err != nil {
@@ -159,6 +161,26 @@ func (s *Service) Start(shellName string, cols, rows int) (string, error) {
 	go s.readLoop(id, pty)
 
 	return id, nil
+}
+
+// withDefaultTermEnv fills in TERM and COLORTERM when the caller
+// hasn't already set them. Terminal-capability-aware CLIs (Claude
+// Code's included) probe these to decide what styling to emit at all,
+// falling back to plain, undecorated output for anything they can't
+// positively identify as a real terminal. go-strider.exe (and other
+// consuming apps) launched normally — not from a console — has neither
+// set in its own environment, which a spawned shell would otherwise
+// inherit as-is, silently downgrading the whole session's rendering.
+func withDefaultTermEnv(env map[string]string) map[string]string {
+	merged := make(map[string]string, len(env)+2)
+	maps.Copy(merged, env)
+	if _, ok := merged["TERM"]; !ok {
+		merged["TERM"] = "xterm-256color"
+	}
+	if _, ok := merged["COLORTERM"]; !ok {
+		merged["COLORTERM"] = "truecolor"
+	}
+	return merged
 }
 
 func (s *Service) resolveShell(shellName string) (ShellDef, error) {
