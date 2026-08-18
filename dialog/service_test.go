@@ -193,3 +193,23 @@ func TestResolveIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestGetSpecPreservesMarkedTextSpans(t *testing.T) {
+	s := NewService(nil)
+	spec := CustomDialogSpec{
+		Title: "Review",
+		Properties: []Property{
+			{Key: "text", Kind: PropertyMarkedText, Label: "Hello world", Spans: []Span{{Start: 0, End: 5, Category: "stock-phrase"}}},
+		},
+	}
+	s.specs["1"] = spec
+
+	got := s.GetSpec("1")
+	if len(got.Properties) != 1 || len(got.Properties[0].Spans) != 1 {
+		t.Fatalf("GetSpec = %+v, want spec with 1 property and 1 span", got)
+	}
+	span := got.Properties[0].Spans[0]
+	if span.Start != 0 || span.End != 5 || span.Category != "stock-phrase" {
+		t.Fatalf("Span = %+v, want {0 5 stock-phrase}", span)
+	}
+}
+

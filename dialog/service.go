@@ -38,6 +38,7 @@ const (
 	PropertyList        PropertyKind = "list"        // editable string list, result value is []string
 	PropertyDropdown    PropertyKind = "dropdown"    // select, result value is string
 	PropertyMultiSelect PropertyKind = "multiSelect" // checkbox group, result value is []string
+	PropertyMarkedText  PropertyKind = "markedText"  // read-only highlighted-span display, not included in the result
 )
 
 // ButtonKind is a button shown in a Custom dialog's button bar.
@@ -53,6 +54,19 @@ const (
 	defaultHeight = 800
 )
 
+// Span marks one highlighted range within a PropertyMarkedText
+// property's Label, e.g. a phrase an AI-watermark reviewer flagged.
+// Start/End are byte offsets into Label ([Start, End)). Category
+// selects which CSS class the frontend applies — any string is
+// accepted here; the fixed category vocabulary this project actually
+// uses lives in Go-Strider's AGENT_SETUP.md-adjacent documentation,
+// not in this generic dialog package.
+type Span struct {
+	Start    int
+	End      int
+	Category string
+}
+
 // Property is one label+input row in a Custom dialog's form.
 type Property struct {
 	Key      string
@@ -61,6 +75,7 @@ type Property struct {
 	Initial  []string // PropertyList seed items
 	Options  []string // PropertyDropdown/PropertyMultiSelect choice set
 	Selected []string // PropertyDropdown/PropertyMultiSelect pre-selection
+	Spans    []Span   // PropertyMarkedText only
 }
 
 // CustomDialogSpec describes a Custom dialog window's content — the Wails
