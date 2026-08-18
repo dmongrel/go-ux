@@ -60,6 +60,9 @@ Thumbs.db
 /tests/
 /.artifacts/
 
+# SDD worktree workspace
+.worktrees/
+
 # Full-resolution parchment originals, kept locally for review only —
 # the shipped versions under reader/parchment_images/ are downscaled.
 /reader/parchment_images_bak/
