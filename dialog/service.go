@@ -33,7 +33,8 @@ type PropertyKind string
 const (
 	PropertyLabel       PropertyKind = "label"       // message only, no input, not included in the result
 	PropertyBool        PropertyKind = "bool"        // checkbox, result value is bool
-	PropertyTextField   PropertyKind = "textField"   // text input, result value is string
+	PropertyTextField   PropertyKind = "textField"   // single-line text input, result value is string
+	PropertyTextArea    PropertyKind = "textArea"    // multi-line text input, result value is string
 	PropertyInt         PropertyKind = "int"         // number input, result value is int
 	PropertyList        PropertyKind = "list"        // editable string list, result value is []string
 	PropertyDropdown    PropertyKind = "dropdown"    // select, result value is string
@@ -88,9 +89,15 @@ type Property struct {
 type CustomDialogSpec struct {
 	Title      string
 	Buttons    []ButtonKind
-	Properties []Property
-	Width      int
-	Height     int
+	// ButtonLabels overrides a button's displayed text without changing
+	// its OK/Cancel behavior — e.g. {ButtonOK: "Accept Rewrite"} shows
+	// "Accept Rewrite" but still submits the form like any other OK
+	// button. A ButtonKind with no entry here falls back to its own
+	// string value ("OK"/"Cancel") as its label.
+	ButtonLabels map[ButtonKind]string
+	Properties   []Property
+	Width        int
+	Height       int
 }
 
 // Service is the Wails-bound replacement for go-ux/dialog.Dialog. Register

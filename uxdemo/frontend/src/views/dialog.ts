@@ -47,7 +47,7 @@ function renderForm(root: HTMLElement, id: string, spec: CustomDialogSpec) {
     for (const kind of spec.Buttons ?? ["OK"]) {
         const btn = document.createElement("button");
         btn.className = "btn" + (kind === "OK" ? " btn-primary" : "");
-        btn.textContent = kind;
+        btn.textContent = spec.ButtonLabels?.[kind] ?? kind;
         btn.addEventListener("click", () => {
             if (kind === "OK") {
                 const result: Record<string, unknown> = {};
@@ -89,6 +89,14 @@ function renderProperty(prop: Property, fields: Map<string, () => unknown>): HTM
             input.value = (prop.Initial ?? [])[0] ?? "";
             fields.set(prop.Key, () => input.value);
             row.appendChild(input);
+            break;
+        }
+        case "textArea": {
+            const textarea = document.createElement("textarea");
+            textarea.className = "input textarea-input";
+            textarea.value = (prop.Initial ?? [])[0] ?? "";
+            fields.set(prop.Key, () => textarea.value);
+            row.appendChild(textarea);
             break;
         }
         case "int": {

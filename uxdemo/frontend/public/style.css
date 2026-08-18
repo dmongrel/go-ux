@@ -50,6 +50,15 @@ html, body, #root {
     padding: 0 8px;
 }
 
+.textarea-input {
+    height: auto;
+    min-height: 120px;
+    width: 100%;
+    padding: 8px;
+    font-family: inherit;
+    resize: vertical;
+}
+
 .prop-readonly-value {
     height: 32px;
     display: flex;
