@@ -138,6 +138,15 @@ func (s *Service) PickFiles() ([]string, error) {
 	return s.app.Dialog.OpenFile().SetTitle("Open Files").PromptForMultipleSelection()
 }
 
+// PickFolder shows a native folder picker and returns the selected
+// directory path, or "" if the user cancels. Wails v3 has no dedicated
+// directory-picker dialog type; this uses the file-open dialog's
+// CanChooseDirectories/CanChooseFiles options, the documented way to
+// get folder-selection behavior from it.
+func (s *Service) PickFolder() (string, error) {
+	return s.app.Dialog.OpenFile().SetTitle("Choose Folder").CanChooseFiles(false).CanChooseDirectories(true).PromptForSingleSelection()
+}
+
 // ShowCustom opens a window rendering spec's property form and blocks the
 // calling goroutine until the user clicks a button or closes the window —
 // matching go-ux/dialog.Dialog.Show's original blocking contract. Must be
