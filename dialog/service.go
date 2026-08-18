@@ -56,11 +56,12 @@ const (
 
 // Span marks one highlighted range within a PropertyMarkedText
 // property's Label, e.g. a phrase an AI-watermark reviewer flagged.
-// Start/End are byte offsets into Label ([Start, End)). Category
-// selects which CSS class the frontend applies — any string is
-// accepted here; the fixed category vocabulary this project actually
-// uses lives in Go-Strider's AGENT_SETUP.md-adjacent documentation,
-// not in this generic dialog package.
+// Start/End are UTF-16 code unit offsets into Label (matching
+// JavaScript string indexing), not byte offsets ([Start, End)).
+// Category selects which CSS class the frontend applies — any string
+// is accepted here; the fixed category vocabulary this project
+// actually uses lives in Go-Strider's AGENT_SETUP.md-adjacent
+// documentation, not in this generic dialog package.
 type Span struct {
 	Start    int
 	End      int
