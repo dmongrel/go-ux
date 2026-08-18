@@ -95,7 +95,11 @@ function renderProperty(prop: Property, fields: Map<string, () => unknown>): HTM
             const textarea = document.createElement("textarea");
             textarea.className = "input textarea-input";
             textarea.value = (prop.Initial ?? [])[0] ?? "";
-            fields.set(prop.Key, () => textarea.value);
+            if (prop.ReadOnly) {
+                textarea.readOnly = true;
+            } else {
+                fields.set(prop.Key, () => textarea.value);
+            }
             row.appendChild(textarea);
             break;
         }

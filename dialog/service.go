@@ -74,10 +74,16 @@ type Property struct {
 	Key      string
 	Label    string
 	Kind     PropertyKind
-	Initial  []string // PropertyList seed items
+	Initial  []string // PropertyList seed items; PropertyTextArea's initial/display text
 	Options  []string // PropertyDropdown/PropertyMultiSelect choice set
 	Selected []string // PropertyDropdown/PropertyMultiSelect pre-selection
 	Spans    []Span   // PropertyMarkedText only
+	// ReadOnly makes a PropertyTextArea display-only (rendered
+	// <textarea readonly>) and excludes it from ShowCustom's result
+	// map, the same "not included in the result" treatment
+	// PropertyLabel/PropertyMarkedText already get. No effect on other
+	// PropertyKinds.
+	ReadOnly bool
 }
 
 // CustomDialogSpec describes a Custom dialog window's content — the Wails

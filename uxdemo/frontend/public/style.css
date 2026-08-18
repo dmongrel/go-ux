@@ -59,6 +59,11 @@ html, body, #root {
     resize: vertical;
 }
 
+.textarea-input:read-only {
+    background: #202124;
+    color: #9a9a9a;
+}
+
 .prop-readonly-value {
     height: 32px;
     display: flex;
