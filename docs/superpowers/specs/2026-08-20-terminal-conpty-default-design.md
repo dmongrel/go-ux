@@ -2,10 +2,10 @@
 
 Date: 2026-08-20
 
-**Status: reverted the same day.** See "Outcome" at the bottom — ConPTY
-is implemented (`conpty_windows.go`) but not wired into `newPtySession`.
-The rest of this document describes the attempt as designed, for the
-record and for whoever picks this up next.
+**Status: reverted, root-caused, fixed, re-enabled — all the same day.**
+See "Outcome" and "Root cause and fix" at the bottom. ConPTY is the live
+default again as of the fix; the sections in between describe the failed
+first attempt for the record.
 
 ## Goal
 
@@ -122,19 +122,52 @@ concern in the (now-superseded) "Known risk" section above: this
 machine's real ConPTY problem is broader than the narrow nested-pty
 quirk that section named.
 
-**Reverted same-day**: `pty_windows.go`'s `newPtySession` now calls
-`newWinPTYSession` unconditionally — see that file's doc comment.
-`conpty_windows.go`, `session_windows.go`, and their tests are kept
-as-is (all still compile and pass; `conpty_windows_test.go`'s own tests
-exercise `newConPTYSession` directly, not through the dispatcher) for a
-future attempt, but ConPTY is not reachable through the normal
-`newPtySession` path this app actually uses.
+**Reverted same-day** (first pass): `pty_windows.go`'s `newPtySession`
+briefly called `newWinPTYSession` unconditionally while the actual cause
+was investigated.
 
-**What a future attempt needs that this one didn't have**: a genuine
-mid-session liveness check — e.g. a bounded wait for the shell's first
-byte of real output (not just a mode-set escape sequence) after spawn,
-falling back to winpty if it doesn't arrive — since `CreateProcess`
-succeeding is not evidence the session actually works on this class of
-machine/environment. The spawn-time-only fallback this design chose
-specifically to avoid that complexity turned out to be the wrong
-trade-off here.
+## Root cause and fix
+
+Compared this package's `conpty_windows.go` line-by-line against
+JetBrains' own ConPTY binding — `pty4j` (`com.pty4j.windows.conpty`,
+what IntelliJ's terminal actually uses; confirmed via
+`LocalPtyOptions.shouldUseWinConPty()`, which defaults to `true` on
+Windows — ConPTY genuinely is IntelliJ's default here, not winpty).
+`pty4j`'s `ProcessUtils.prepareStartupInformation` sets one thing this
+package's `newConPTYSession` didn't:
+
+```java
+// according to https://github.com/microsoft/terminal/issues/11276#issuecomment-923210023
+startupInfo.StartupInfo.dwFlags = WinBase.STARTF_USESTDHANDLES;
+```
+
+— with `hStdInput`/`hStdOutput`/`hStdError` all left `NULL`. That GitHub
+issue's own description matches this project's symptom almost exactly:
+without `STARTF_USESTDHANDLES`, a ConPTY-spawned child can end up using
+the parent's own standard handles (or, for a console-less GUI parent
+like `go-strider.exe`, failing to attach to the pseudo-console at all)
+instead of respecting `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE` — exactly
+the "spawns, but the session is dead" failure this design hit.
+`newConPTYSession` now sets `si.StartupInfo.Flags =
+windows.STARTF_USESTDHANDLES` right alongside the attribute list. With
+that one flag, all four `conpty_windows_test.go` tests went from
+skipping/failing (garbled or console-leaked output) to passing cleanly
+— no other change needed, not the named-pipe rewrite, not the retry
+loop winpty needed, nothing.
+
+`newPtySession` now prefers ConPTY again, winpty as the fallback, per
+the original goal. The spawn-time-only fallback scope (see "Fallback
+trigger" above) stands: this fix addresses a real bug in this project's
+own `CreateProcess` call, not a fundamental limit of ConPTY needing a
+runtime liveness check to work around. If output-delivery unreliability
+still turns out to be real on some other Windows build/environment,
+that's a separate, later problem with its own evidence to gather.
+
+**Note for future maintainers**: `pty4j`'s `Pipe` class uses plain
+synchronous anonymous `CreatePipe` handles, same as this package's
+original pre-July-22 ConPTY code — not the overlapped named pipes this
+rewrite introduced. That hardening (matching winpty's own
+Close-races-Read fix) is still justified independently — the underlying
+Windows hazard it guards against is real — but it was not what fixed
+this particular bug, and is called out here so it isn't mistakenly
+credited as the fix if this file's history gets revisited later.

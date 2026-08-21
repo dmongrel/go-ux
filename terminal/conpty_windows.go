@@ -132,6 +132,17 @@ func newConPTYSession(def ShellDef, cols, rows int) (ptySession, error) {
 	var si windows.StartupInfoEx
 	si.ProcThreadAttributeList = (*windows.ProcThreadAttributeList)(attrPtr)
 	si.StartupInfo.Cb = uint32(unsafe.Sizeof(si))
+	// STARTF_USESTDHANDLES with all three handles left zero (NULL) is
+	// required here, not optional — pty4j's ConPTY binding (JetBrains'
+	// own, which IntelliJ's terminal uses) sets this too, citing
+	// microsoft/terminal#11276: without it, CreateProcess can hand the
+	// spawned shell the parent's own inherited standard handles (or, in a
+	// GUI process with no console at all, something that isn't the
+	// pseudo-console) instead of respecting PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE
+	// — observed here as every tab spawning "successfully" but sitting on
+	// a dead blinking cursor with no prompt, never actually attached to
+	// what this code just wired up.
+	si.StartupInfo.Flags = windows.STARTF_USESTDHANDLES
 
 	cmdLine, err := syscall.UTF16PtrFromString(commandLine(def))
 	if err != nil {

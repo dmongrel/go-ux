@@ -33,13 +33,7 @@ func TestNewConPTYSessionSpawnsShellAndProducesOutput(t *testing.T) {
 
 	out := readForDuration(t, sess, 3*time.Second)
 	if !strings.Contains(out, "SESSION_MARKER_98765") {
-		t.Skipf("captured output %q does not contain the echoed marker; a possible "+
-			"machine/build-specific PTY-attach limitation (see "+
-			"TestNewPtySessionSpawnsShellAndProducesOutput's doc comment — this is the "+
-			"exact ConPTY quirk, observed on this machine, that motivated the original "+
-			"winpty switch) prevents this test from distinguishing a real wiring bug "+
-			"from that limitation, so it skips rather than fails",
-			out)
+		t.Fatalf("captured output %q does not contain the echoed marker", out)
 	}
 }
 
@@ -96,14 +90,10 @@ func TestNewConPTYSessionHonorsWorkDirAndEnv(t *testing.T) {
 	defer sess.Close()
 
 	out := readForDuration(t, sess, 3*time.Second)
-	if !strings.Contains(out, workDir) || !strings.Contains(out, "hello123") {
-		t.Skipf("captured output %q missing WorkDir %q and/or env value %q; the same "+
-			"possible machine-specific ConPTY PTY-attach quirk "+
-			"TestNewConPTYSessionSpawnsShellAndProducesOutput's doc comment describes "+
-			"prevents this test from distinguishing a real WorkDir/Env wiring bug from "+
-			"that limitation, so it skips rather than fails — see TestBuildEnvBlock* "+
-			"for a deterministic, PTY-independent check of the actual "+
-			"argument-construction logic",
-			out, workDir, "hello123")
+	if !strings.Contains(out, workDir) {
+		t.Errorf("captured output %q does not contain WorkDir %q", out, workDir)
+	}
+	if !strings.Contains(out, "hello123") {
+		t.Errorf("captured output %q does not contain env var value %q", out, "hello123")
 	}
 }
