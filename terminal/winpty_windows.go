@@ -580,6 +580,21 @@ func overlappedIO(handle, ioEvent, shutdownEvent windows.Handle, start func(*win
 	return int(actual), nil
 }
 
+// Resize changes the pseudo-console's dimensions, nudging through a
+// briefly-held intermediate size first when one is available.
+//
+// winpty has to synthesize a WINDOW_BUFFER_SIZE_EVENT for the console
+// after winpty_set_size, rather than relying on genuine OS resize
+// semantics the way ConPTY does — and that synthesized event isn't
+// always observed by every nested console child process. A plain shell
+// prompt (PowerShell/Git Bash) never notices a missed event, since it
+// re-queries the current size on every redraw regardless; a Node.js TUI
+// like Claude Code's CLI only redraws in response to the event itself,
+// so a missed one leaves its frame stuck at the stale size. Requesting
+// a genuinely different intermediate size before the real target forces
+// two distinct events instead of one, improving the odds a nested
+// reader observes at least the second. Skipped when cols and rows are
+// both already 1 — there's no smaller size to nudge through.
 func (s *winPTYSession) Resize(cols, rows int) error {
 	winptyMu.Lock()
 	defer winptyMu.Unlock()
@@ -587,6 +602,22 @@ func (s *winPTYSession) Resize(cols, rows int) error {
 		return errSessionClosed
 	}
 
+	if cols > 1 || rows > 1 {
+		nudgeCols, nudgeRows := cols, rows
+		if cols > 1 {
+			nudgeCols--
+		} else {
+			nudgeRows--
+		}
+		_ = s.setSizeLocked(nudgeCols, nudgeRows) // best-effort; the real resize below is what must succeed
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	return s.setSizeLocked(cols, rows)
+}
+
+// setSizeLocked calls winpty_set_size. Callers must hold winptyMu.
+func (s *winPTYSession) setSizeLocked(cols, rows int) error {
 	var errPtr uintptr
 	ok, _, _ := procSetSize.Call(s.wp, uintptr(cols), uintptr(rows), uintptr(unsafe.Pointer(&errPtr)))
 	if err := winptyErr("winpty_set_size", &errPtr); err != nil {

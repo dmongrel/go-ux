@@ -346,3 +346,20 @@ func TestPtySessionResize(t *testing.T) {
 	}
 }
 
+// TestPtySessionResize_MinimumSize_DoesNotError exercises Resize's nudge
+// guard at the one size where no smaller intermediate size exists (1x1) —
+// the case where a naive "always nudge cols-1" would request an invalid
+// 0-width size.
+func TestPtySessionResize_MinimumSize_DoesNotError(t *testing.T) {
+	def := ShellDef{Name: "cmd.exe", Path: os.Getenv("SystemRoot") + `\System32\cmd.exe`}
+	sess, err := newPtySession(def, 80, 24)
+	if err != nil {
+		t.Fatalf("newPtySession: %v", err)
+	}
+	defer sess.Close()
+
+	if err := sess.Resize(1, 1); err != nil {
+		t.Errorf("Resize(1, 1): %v", err)
+	}
+}
+
