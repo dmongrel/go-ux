@@ -52,9 +52,9 @@ const livenessWindow = 900 * time.Millisecond
 // development).
 func TestNewPtySessionSpawnsShellAndProducesOutput(t *testing.T) {
 	def := ShellDef{Name: "cmd.exe", Path: os.Getenv("SystemRoot") + `\System32\cmd.exe`}
-	sess, err := newPtySession(def, 80, 24)
+	sess, err := newWinPTYSession(def, 80, 24)
 	if err != nil {
-		t.Fatalf("newPtySession: %v", err)
+		t.Fatalf("newWinPTYSession: %v", err)
 	}
 	defer sess.Close()
 
@@ -105,9 +105,9 @@ func TestNewPtySessionSpawnsShellAndProducesOutput(t *testing.T) {
 
 func TestPtySessionCloseIsIdempotent(t *testing.T) {
 	def := ShellDef{Name: "cmd.exe", Path: os.Getenv("SystemRoot") + `\System32\cmd.exe`}
-	sess, err := newPtySession(def, 80, 24)
+	sess, err := newWinPTYSession(def, 80, 24)
 	if err != nil {
-		t.Fatalf("newPtySession: %v", err)
+		t.Fatalf("newWinPTYSession: %v", err)
 	}
 
 	if err := sess.Close(); err != nil {
@@ -137,9 +137,9 @@ func TestNewPtySessionHonorsWorkDir(t *testing.T) {
 		Args:    []string{"/C", "cd"},
 		WorkDir: workDir,
 	}
-	sess, err := newPtySession(def, 80, 24)
+	sess, err := newWinPTYSession(def, 80, 24)
 	if err != nil {
-		t.Fatalf("newPtySession: %v", err)
+		t.Fatalf("newWinPTYSession: %v", err)
 	}
 	defer sess.Close()
 
@@ -150,7 +150,7 @@ func TestNewPtySessionHonorsWorkDir(t *testing.T) {
 			"TestNewPtySessionSpawnsShellAndProducesOutput's doc comment) "+
 			"prevents this test from distinguishing a real WorkDir bug from "+
 			"that limitation, so it skips rather than fails — see "+
-			"TestBuildWinptyEnvBlock* for a deterministic, PTY-independent "+
+			"TestBuildEnvBlock* for a deterministic, PTY-independent "+
 			"check of the actual argument-construction logic",
 			out, workDir)
 	}
@@ -169,9 +169,9 @@ func TestNewPtySessionHonorsEnv(t *testing.T) {
 		Args: []string{"/C", "echo %GOUX_TEST_VAR%"},
 		Env:  map[string]string{"GOUX_TEST_VAR": "hello123"},
 	}
-	sess, err := newPtySession(def, 80, 24)
+	sess, err := newWinPTYSession(def, 80, 24)
 	if err != nil {
-		t.Fatalf("newPtySession: %v", err)
+		t.Fatalf("newWinPTYSession: %v", err)
 	}
 	defer sess.Close()
 
@@ -182,7 +182,7 @@ func TestNewPtySessionHonorsEnv(t *testing.T) {
 			"TestNewPtySessionSpawnsShellAndProducesOutput's doc comment) "+
 			"prevents this test from distinguishing a real Env bug from that "+
 			"limitation, so it skips rather than fails — see "+
-			"TestBuildWinptyEnvBlock* for a deterministic, PTY-independent "+
+			"TestBuildEnvBlock* for a deterministic, PTY-independent "+
 			"check of the actual argument-construction logic",
 			out, "hello123")
 	}
@@ -235,47 +235,47 @@ func readForDuration(t *testing.T, sess ptySession, d time.Duration) string {
 	}
 }
 
-// TestBuildWinptyEnvBlockNilWhenEmpty confirms an empty/nil overrides map
+// TestBuildEnvBlockNilWhenEmpty confirms an empty/nil overrides map
 // produces a nil block, so winpty_spawn_config_new is told NULL and the
 // spawned process fully inherits the parent's environment — the default
 // behavior for the common case where no caller sets ShellDef.Env.
-func TestBuildWinptyEnvBlockNilWhenEmpty(t *testing.T) {
-	block, err := buildWinptyEnvBlock(nil)
+func TestBuildEnvBlockNilWhenEmpty(t *testing.T) {
+	block, err := buildEnvBlock(nil)
 	if err != nil {
-		t.Fatalf("buildWinptyEnvBlock(nil): %v", err)
+		t.Fatalf("buildEnvBlock(nil): %v", err)
 	}
 	if block != nil {
-		t.Errorf("buildWinptyEnvBlock(nil) = %v, want nil", block)
+		t.Errorf("buildEnvBlock(nil) = %v, want nil", block)
 	}
 
-	block, err = buildWinptyEnvBlock(map[string]string{})
+	block, err = buildEnvBlock(map[string]string{})
 	if err != nil {
-		t.Fatalf("buildWinptyEnvBlock(empty map): %v", err)
+		t.Fatalf("buildEnvBlock(empty map): %v", err)
 	}
 	if block != nil {
-		t.Errorf("buildWinptyEnvBlock(empty map) = %v, want nil", block)
+		t.Errorf("buildEnvBlock(empty map) = %v, want nil", block)
 	}
 }
 
-// TestBuildWinptyEnvBlockMergesOverridesWithInheritedEnv proves, at the
+// TestBuildEnvBlockMergesOverridesWithInheritedEnv proves, at the
 // level of the actual argument winpty_spawn_config_new receives, that
 // overrides both add new variables and override existing inherited ones —
 // deterministically and without spawning any process, unlike
 // TestNewPtySessionHonorsEnv above (which can only observe this end-to-end
 // through the live PTY pipe). This is the test that actually exercises the
 // wiring the whole-branch review flagged as silently ignored.
-func TestBuildWinptyEnvBlockMergesOverridesWithInheritedEnv(t *testing.T) {
+func TestBuildEnvBlockMergesOverridesWithInheritedEnv(t *testing.T) {
 	t.Setenv("GOUX_TEST_INHERITED", "inherited-value")
 
-	block, err := buildWinptyEnvBlock(map[string]string{
+	block, err := buildEnvBlock(map[string]string{
 		"GOUX_TEST_NEW":       "new-value",
 		"GOUX_TEST_INHERITED": "overridden-value",
 	})
 	if err != nil {
-		t.Fatalf("buildWinptyEnvBlock: %v", err)
+		t.Fatalf("buildEnvBlock: %v", err)
 	}
 	if block == nil {
-		t.Fatal("buildWinptyEnvBlock returned nil block for non-empty overrides")
+		t.Fatal("buildEnvBlock returned nil block for non-empty overrides")
 	}
 
 	entries := decodeEnvBlock(block)
@@ -335,9 +335,9 @@ func decodeEnvBlock(block *uint16) []string {
 
 func TestPtySessionResize(t *testing.T) {
 	def := ShellDef{Name: "cmd.exe", Path: os.Getenv("SystemRoot") + `\System32\cmd.exe`}
-	sess, err := newPtySession(def, 80, 24)
+	sess, err := newWinPTYSession(def, 80, 24)
 	if err != nil {
-		t.Fatalf("newPtySession: %v", err)
+		t.Fatalf("newWinPTYSession: %v", err)
 	}
 	defer sess.Close()
 
@@ -352,9 +352,9 @@ func TestPtySessionResize(t *testing.T) {
 // 0-width size.
 func TestPtySessionResize_MinimumSize_DoesNotError(t *testing.T) {
 	def := ShellDef{Name: "cmd.exe", Path: os.Getenv("SystemRoot") + `\System32\cmd.exe`}
-	sess, err := newPtySession(def, 80, 24)
+	sess, err := newWinPTYSession(def, 80, 24)
 	if err != nil {
-		t.Fatalf("newPtySession: %v", err)
+		t.Fatalf("newWinPTYSession: %v", err)
 	}
 	defer sess.Close()
 

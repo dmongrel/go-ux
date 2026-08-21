@@ -8,16 +8,12 @@ package terminal
 import (
 	"embed"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -178,44 +174,18 @@ func winptyErr(call string, errPtr *uintptr) error {
 	return fmt.Errorf("terminal: %s: %s", call, msg)
 }
 
-// uintptrToPointer reinterprets a uintptr obtained from a winpty DLL call
-// (an LPCWSTR/HANDLE the DLL owns, not a Go-managed pointer) as an
-// unsafe.Pointer. It exists because go vet's unsafeptr check flags a direct
-// `unsafe.Pointer(x)` conversion of any uintptr-typed value x — including
-// this one, even though it's the standard "syscall returned a native
-// pointer" case golang.org/x/sys/windows's own generated wrappers rely on
-// throughout zsyscall_windows.go. Going through the address of x instead of
-// x itself avoids that exact flagged syntactic shape without changing what
-// happens at runtime (both are a bit-for-bit reinterpretation of the same
-// machine word); see this repo's now-deleted conpty_windows.go (git history)
-// for this package's established precedent of routing around go vet's
-// unsafeptr false positives rather than suppressing the check outright.
-func uintptrToPointer(x uintptr) unsafe.Pointer {
-	return *(*unsafe.Pointer)(unsafe.Pointer(&x))
-}
-
-func utf16PtrToString(p *uint16) string {
-	if p == nil {
-		return ""
-	}
-	var chars []uint16
-	for ptr := unsafe.Pointer(p); ; ptr = unsafe.Add(ptr, 2) {
-		c := *(*uint16)(ptr)
-		if c == 0 {
-			break
-		}
-		chars = append(chars, c)
-	}
-	return string(utf16.Decode(chars))
-}
-
-// winPTYSession is the Windows ptySession implementation, backed by winpty
-// (github.com/rprichard/winpty, vendored under terminal/winpty/) rather than
-// the native ConPTY API. See the package's design spec
-// (docs/superpowers/specs/2026-07-22-terminal-winpty-backend-design.md) for
-// why: ConPTY's output delivery is not reliable on every Windows
-// build/environment, which winpty (running its own console-hosting agent
-// process) sidesteps.
+// winPTYSession is the Windows ptySession implementation backed by winpty
+// (github.com/rprichard/winpty, vendored under terminal/winpty/) — the
+// fallback backend newPtySession (pty_windows.go) uses when ConPTY is
+// unavailable or fails to spawn. See
+// docs/superpowers/specs/2026-08-20-terminal-conpty-default-design.md for
+// why ConPTY is preferred when it works: unlike winpty (which reads a
+// hidden console's screen buffer on a timer and re-synthesizes VT escape
+// codes for whatever changed), ConPTY is a first-class Windows API with
+// genuine pseudo-console semantics — no scraping, no synthesized resize
+// events, no cursor-state reconstruction. Kept as the fallback rather than
+// removed because ConPTY has its own documented output-delivery
+// unreliability on some Windows builds/environments.
 type winPTYSession struct {
 	wp      uintptr // winpty_t*
 	conin   windows.Handle
@@ -270,7 +240,10 @@ type winPTYSession struct {
 	closeErr  error
 }
 
-func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
+// newWinPTYSession spawns a shell under winpty. newPtySession
+// (pty_windows.go) is the actual ptySession-selecting entry point this
+// package exposes; this is its fallback path.
+func newWinPTYSession(def ShellDef, cols, rows int) (ptySession, error) {
 	if err := loadWinptyDLL(); err != nil {
 		return nil, err
 	}
@@ -394,7 +367,7 @@ func newPtySession(def ShellDef, cols, rows int) (ptySession, error) {
 		}
 	}
 
-	envPtr, err := buildWinptyEnvBlock(def.Env)
+	envPtr, err := buildEnvBlock(def.Env)
 	if err != nil {
 		return nil, fmt.Errorf("terminal: encode environment: %w", err)
 	}
@@ -467,49 +440,6 @@ func connectWinptyPipe(nameProc *syscall.LazyProc, wp uintptr, access uint32) (w
 	return h, nil
 }
 
-// buildWinptyEnvBlock renders overrides into the UTF-16
-// double-null-terminated "KEY=VALUE\0...\0\0" block winpty_spawn_config_new's
-// env parameter expects (same shape CreateProcess's lpEnvironment takes).
-// When overrides is empty, it returns (nil, nil) so winpty is told NULL,
-// which per winpty_spawn_config_new's contract means the spawned process
-// inherits the environment normally — this keeps the default behavior
-// unchanged for the common case where no caller sets ShellDef.Env. When
-// overrides is non-empty, the block is built from the current process's
-// inherited environment (os.Environ()) with overrides layered on top, so a
-// session can tweak or add a few variables without callers having to
-// reconstruct the whole environment themselves.
-func buildWinptyEnvBlock(overrides map[string]string) (*uint16, error) {
-	if len(overrides) == 0 {
-		return nil, nil
-	}
-
-	merged := make(map[string]string)
-	for _, kv := range os.Environ() {
-		if before, after, ok := strings.Cut(kv, "="); ok {
-			merged[before] = after
-		}
-	}
-	maps.Copy(merged, overrides)
-
-	keys := make([]string, 0, len(merged))
-	for k := range merged {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var block []uint16
-	for _, k := range keys {
-		block = append(block, utf16.Encode([]rune(k+"="+merged[k]+"\x00"))...)
-	}
-	block = append(block, 0)
-
-	return &block[0], nil
-}
-
-// errSessionClosed is returned by Read/Write when Close signaled
-// shutdownEvent while a call was pending.
-var errSessionClosed = fmt.Errorf("terminal: session closed")
-
 func (s *winPTYSession) Write(p []byte) (int, error) {
 	s.coninMu.Lock()
 	defer s.coninMu.Unlock()
@@ -534,50 +464,6 @@ func (s *winPTYSession) Read(p []byte) (int, error) {
 		err := windows.ReadFile(s.conout, p, &n, overlapped)
 		return n, err
 	})
-}
-
-// overlappedIO drives one overlapped ReadFile/WriteFile call (issued by
-// start, which must pass the same handle whose OVERLAPPED is being used) to
-// completion, or aborts it if shutdownEvent fires first. This exists so
-// Close can safely close conin/conout while a Read or Write is in flight on
-// another goroutine: without overlapped I/O, that's a close-races-a-blocking-
-// syscall hazard Windows leaves undefined, and this project saw it manifest
-// as sporadic STATUS_HEAP_CORRUPTION under concurrent multi-session use (see
-// winPTYSession's doc comment on shutdownEvent). Mirrors the pattern
-// JetBrains' pty4j uses for the same reason (NamedPipe.java: an event-based
-// overlapped read/write plus a shared shutdown event Close signals first).
-func overlappedIO(handle, ioEvent, shutdownEvent windows.Handle, start func(*windows.Overlapped) (uint32, error)) (int, error) {
-	var overlapped windows.Overlapped
-	overlapped.HEvent = ioEvent
-
-	n, err := start(&overlapped)
-	if err == nil {
-		return int(n), nil
-	}
-	if err != windows.ERROR_IO_PENDING {
-		return int(n), err
-	}
-
-	idx, waitErr := windows.WaitForMultipleObjects([]windows.Handle{ioEvent, shutdownEvent}, false, windows.INFINITE)
-	if waitErr != nil {
-		return 0, waitErr
-	}
-	if idx != 0 {
-		// shutdownEvent fired first: cancel the pending call and wait for
-		// the cancellation itself to finish before returning, so the
-		// OVERLAPPED struct (stack-allocated here) is never touched by the
-		// kernel again after this function returns.
-		windows.CancelIoEx(handle, &overlapped)
-		var discarded uint32
-		windows.GetOverlappedResult(handle, &overlapped, &discarded, true)
-		return 0, errSessionClosed
-	}
-
-	var actual uint32
-	if err := windows.GetOverlappedResult(handle, &overlapped, &actual, true); err != nil {
-		return int(actual), err
-	}
-	return int(actual), nil
 }
 
 // Resize changes the pseudo-console's dimensions, nudging through a
@@ -685,28 +571,5 @@ func (s *winPTYSession) Wait() error {
 		return fmt.Errorf("terminal: process exited with code %d", exitCode)
 	}
 	return nil
-}
-
-// commandLine renders def into a single Windows command-line string: the
-// executable path, quoted if it contains spaces, followed by its arguments,
-// each individually quoted the same way if it contains a space.
-func commandLine(def ShellDef) string {
-	path := def.Path
-	if hasSpace(path) {
-		path = `"` + path + `"`
-	}
-	var cmd strings.Builder
-	cmd.WriteString(path)
-	for _, a := range def.Args {
-		if hasSpace(a) {
-			a = `"` + a + `"`
-		}
-		cmd.WriteString(" " + a)
-	}
-	return cmd.String()
-}
-
-func hasSpace(s string) bool {
-	return strings.Contains(s, " ")
 }
 
